@@ -259,10 +259,11 @@ select option { background: var(--surface2); }
 /* TEAM CARDS */
 .teams-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
   margin-bottom: 20px;
 }
+@media (max-width: 900px) { .teams-grid { grid-template-columns: 1fr; } }
 
 .team-card {
   background: var(--surface);
@@ -386,6 +387,7 @@ tr:last-child td { border-bottom: none; }
 .badge-inss { background: rgba(249,115,22,0.12); color: #fb923c; }
 .badge-meli { background: rgba(255,230,0,0.12); color: var(--meli); border: 1px solid rgba(255,230,0,0.2); }
 .badge-temp { background: rgba(168,85,247,0.12); color: #c084fc; border: 1px solid rgba(168,85,247,0.2); }
+.badge-pt { background: rgba(6,182,212,0.12); color: #22d3ee; border: 1px solid rgba(6,182,212,0.25); }
 
 /* MODAL */
 .modal-overlay {
@@ -777,6 +779,7 @@ table.esc-cal td { position:relative; }
         <select id="dash-team" onchange="refreshDashboard()">
           <option value="">Todos</option>
           <option value="MELI">MELI</option>
+          <option value="PART_TIME">Part Time</option>
           <option value="TEMP">Temporário</option>
         </select>
       </div>
@@ -853,6 +856,7 @@ table.esc-cal td { position:relative; }
         <select id="pres-team" onchange="refreshPresenca()">
           <option value="">Todos</option>
           <option value="MELI">MELI</option>
+          <option value="PART_TIME">Part Time</option>
           <option value="TEMP">Temporário</option>
         </select>
       </div>
@@ -932,6 +936,7 @@ table.esc-cal td { position:relative; }
         <select id="col-team" onchange="refreshColaboradores()">
           <option value="">Todos</option>
           <option value="MELI">MELI</option>
+          <option value="PART_TIME">Part Time</option>
           <option value="TEMP">Temporário</option>
         </select>
       </div>
@@ -1008,6 +1013,7 @@ table.esc-cal td { position:relative; }
         <select id="esc-team" onchange="refreshEscala()">
           <option value="">Todos</option>
           <option value="MELI">MELI</option>
+          <option value="PART_TIME">Part Time</option>
           <option value="TEMP">Temporário</option>
         </select>
       </div>
@@ -1242,6 +1248,14 @@ function isMeli(row) {
   return (row['EMPRESA'] || '').trim().toUpperCase() === 'MELI';
 }
 
+function isPartTime(row) {
+  return (row['EMPRESA'] || '').trim().toUpperCase() === 'PART TIME';
+}
+
+function isTemp(row) {
+  return !isMeli(row) && !isPartTime(row);
+}
+
 function isActive(row) {
   return (row['STATUS'] || '').trim().toUpperCase() === 'ATIVO';
 }
@@ -1277,6 +1291,7 @@ function attBadge(val) {
 
 function teamBadge(row) {
   if (isMeli(row)) return `<span class="badge badge-meli">MELI</span>`;
+  if (isPartTime(row)) return `<span class="badge badge-pt">PART TIME</span>`;
   const emp = (row['EMPRESA'] || '').trim();
   return `<span class="badge badge-temp" title="${emp}">TEMP</span>`;
 }
@@ -1309,7 +1324,8 @@ function notify(msg, type='success') {
 function getFilteredData(teamFilter, statusFilter, liderFilter, cicloFilter, cargoFilter) {
   return allData.filter(r => {
     if (teamFilter === 'MELI' && !isMeli(r)) return false;
-    if (teamFilter === 'TEMP' && isMeli(r)) return false;
+    if (teamFilter === 'PART_TIME' && !isPartTime(r)) return false;
+    if (teamFilter === 'TEMP' && !isTemp(r)) return false;
     if (statusFilter === 'ATIVO' && (r['STATUS'] || '').trim().toUpperCase() !== 'ATIVO') return false;
     if (statusFilter === 'INATIVO' && (r['STATUS'] || '').trim().toUpperCase() !== 'INATIVO') return false;
     if (liderFilter && (r['LÍDER'] || '').trim() !== liderFilter.trim()) return false;
@@ -1405,8 +1421,8 @@ function refreshDashboard() {
 
   // Stats — soma ocorrências-dia em todo o intervalo
   let presente=0, justificada=0, injustificada=0, folga=0, ferias=0, banco=0, inss=0, total=0;
-  let meliPresente=0, meliTotal=0, tempPresente=0, tempTotal=0;
-  let meliJust=0, meliInjust=0, tempJust=0, tempInjust=0;
+  let meliPresente=0, meliTotal=0, tempPresente=0, tempTotal=0, ptPresente=0, ptTotal=0;
+  let meliJust=0, meliInjust=0, tempJust=0, tempInjust=0, ptJust=0, ptInjust=0;
 
   // Mapa de contadores por colaborador (para tabela em modo intervalo)
   const perColab = new Map(); // idx → {p,fj,fi,fd,fe,bh,inss,inativo}
@@ -1414,14 +1430,17 @@ function refreshDashboard() {
   filtered.forEach(r => {
     total++;
     const isM = isMeli(r);
-    if (isM) meliTotal++; else tempTotal++;
+    const isP = isPartTime(r);
+    if (isM) meliTotal++;
+    else if (isP) ptTotal++;
+    else tempTotal++;
     const c = { p:0, fj:0, fi:0, fd:0, fe:0, bh:0, inss:0, inativo:0 };
     dates.forEach(d => {
       const av = getEffectiveAtt(r, d).toUpperCase();
       if (!av) return;
-      if (av === 'PRESENTE')        { presente++; c.p++;    if (isM) meliPresente++; else tempPresente++; }
-      else if (av === 'JUSTIFICADA') { justificada++; c.fj++; if (isM) meliJust++;     else tempJust++; }
-      else if (av === 'INJUSTIFICADA'){injustificada++; c.fi++; if (isM) meliInjust++;  else tempInjust++; }
+      if (av === 'PRESENTE')        { presente++; c.p++;    if (isM) meliPresente++; else if (isP) ptPresente++; else tempPresente++; }
+      else if (av === 'JUSTIFICADA') { justificada++; c.fj++; if (isM) meliJust++;     else if (isP) ptJust++;     else tempJust++; }
+      else if (av === 'INJUSTIFICADA'){injustificada++; c.fi++; if (isM) meliInjust++;  else if (isP) ptInjust++;   else tempInjust++; }
       else if (av === 'FOLGA DSR')   { folga++; c.fd++; }
       else if (av === 'FÉRIAS')      { ferias++; c.fe++; }
       else if (av === 'BANCO DE HORAS'){ banco++; c.bh++; }
@@ -1437,8 +1456,14 @@ function refreshDashboard() {
   const subTxt    = !hasDate ? 'Selecione uma data' : (isRange ? `no período (${dates.length} dias)` : 'no dia');
   const meliDen   = isRange ? meliTotal * dates.length : meliTotal;
   const tempDen   = isRange ? tempTotal * dates.length : tempTotal;
+  const ptDen     = isRange ? ptTotal   * dates.length : ptTotal;
   const meliPct   = meliDen > 0 ? Math.round(meliPresente / meliDen * 100) : 0;
   const tempPct   = tempDen > 0 ? Math.round(tempPresente / tempDen * 100) : 0;
+  const ptPct     = ptDen   > 0 ? Math.round(ptPresente   / ptDen   * 100) : 0;
+  // % faltas (J + I) sobre presentes
+  const meliFaltaPct = meliPresente > 0 ? Math.round((meliJust + meliInjust) / meliPresente * 100) : 0;
+  const tempFaltaPct = tempPresente > 0 ? Math.round((tempJust + tempInjust) / tempPresente * 100) : 0;
+  const ptFaltaPct   = ptPresente   > 0 ? Math.round((ptJust   + ptInjust)   / ptPresente   * 100) : 0;
   const totalDen  = isRange ? total * dates.length : total;
   const pctRange  = totalDen > 0 ? Math.round(presente / totalDen * 100) : 0;
 
@@ -1479,6 +1504,11 @@ function refreshDashboard() {
       <div class="stat-value">${meliTotal}</div>
       <div class="stat-sub">${hasDate ? meliPresente + ' presenças' : 'colaboradores'}</div>
     </div>
+    <div class="stat-card cyan" style="--cyan2:#22d3ee">
+      <div class="stat-label">Part Time</div>
+      <div class="stat-value" style="color:#22d3ee">${ptTotal}</div>
+      <div class="stat-sub">${hasDate ? ptPresente + ' presenças' : 'colaboradores'}</div>
+    </div>
     <div class="stat-card temp">
       <div class="stat-label">Temporários</div>
       <div class="stat-value">${tempTotal}</div>
@@ -1496,6 +1526,18 @@ function refreshDashboard() {
       <div class="team-stat-row"><span>Falta Justificada</span><span style="color:var(--yellow)">${hasDate ? meliJust : '—'}</span></div>
       <div class="team-stat-row"><span>Falta Injustificada</span><span style="color:#f87171">${hasDate ? meliInjust : '—'}</span></div>
       <div class="team-stat-row"><span>% Presença</span><span>${hasDate && meliDen > 0 ? meliPct+'%' : '—'}</span></div>
+      <div class="team-stat-row"><span>% Faltas / Presentes</span><span style="color:#f87171">${hasDate && meliPresente > 0 ? meliFaltaPct+'%' : '—'}</span></div>
+    </div>
+    <div class="team-card">
+      <div class="team-header">
+        <span class="team-badge pt" style="background:rgba(6,182,212,0.15);color:#22d3ee;border:1px solid rgba(6,182,212,0.3)">⏱ PART TIME</span>
+        <span style="font-size:24px;font-weight:700;color:#22d3ee">${ptTotal}</span>
+      </div>
+      <div class="team-stat-row"><span>Presenças</span><span style="color:#34d399">${hasDate ? ptPresente : '—'}</span></div>
+      <div class="team-stat-row"><span>Falta Justificada</span><span style="color:var(--yellow)">${hasDate ? ptJust : '—'}</span></div>
+      <div class="team-stat-row"><span>Falta Injustificada</span><span style="color:#f87171">${hasDate ? ptInjust : '—'}</span></div>
+      <div class="team-stat-row"><span>% Presença</span><span>${hasDate && ptDen > 0 ? ptPct+'%' : '—'}</span></div>
+      <div class="team-stat-row"><span>% Faltas / Presentes</span><span style="color:#f87171">${hasDate && ptPresente > 0 ? ptFaltaPct+'%' : '—'}</span></div>
     </div>
     <div class="team-card">
       <div class="team-header">
@@ -1506,6 +1548,7 @@ function refreshDashboard() {
       <div class="team-stat-row"><span>Falta Justificada</span><span style="color:var(--yellow)">${hasDate ? tempJust : '—'}</span></div>
       <div class="team-stat-row"><span>Falta Injustificada</span><span style="color:#f87171">${hasDate ? tempInjust : '—'}</span></div>
       <div class="team-stat-row"><span>% Presença</span><span>${hasDate && tempDen > 0 ? tempPct+'%' : '—'}</span></div>
+      <div class="team-stat-row"><span>% Faltas / Presentes</span><span style="color:#f87171">${hasDate && tempPresente > 0 ? tempFaltaPct+'%' : '—'}</span></div>
     </div>
   `;
 
@@ -1964,7 +2007,7 @@ function exportCSV() {
   const now = new Date();
   const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
   const suffix = [
-    team ? (team === 'MELI' ? '_MELI' : '_TEMP') : '',
+    team ? (team === 'MELI' ? '_MELI' : team === 'PART_TIME' ? '_PARTTIME' : '_TEMP') : '',
     lider ? `_${lider}` : '',
     status === 'ATIVO' ? '_ativos' : status === 'INATIVO' ? '_inativos' : ''
   ].join('');
