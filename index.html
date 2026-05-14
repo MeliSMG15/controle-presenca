@@ -816,6 +816,29 @@ table.esc-cal td { position:relative; }
 
     <div class="teams-grid" id="dash-teams"></div>
 
+    <div class="table-wrap" style="margin-bottom:20px">
+      <div class="table-header">
+        <span class="table-title">🚨 Faltas Injustificadas — <span id="dash-falta-year"></span></span>
+        <span class="table-count" id="dash-falta-count">0 colaboradores</span>
+      </div>
+      <div class="table-scroll">
+        <table id="dash-falta-table">
+          <thead>
+            <tr>
+              <th>Colaborador</th>
+              <th>Time</th>
+              <th>Líder</th>
+              <th style="text-align:center">Faltas no ano</th>
+              <th>Última falta</th>
+              <th>Admissão</th>
+              <th>Tempo de casa</th>
+            </tr>
+          </thead>
+          <tbody id="dash-falta-body"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="table-wrap">
       <div class="table-header">
         <span class="table-title">Detalhamento do Dia</span>
@@ -1310,6 +1333,27 @@ function formatDate(d) {
   return d;
 }
 
+// "2a 3m" baseado na DATA ADMISSÃO
+function timeAtCompany(admissao) {
+  if (!admissao) return '—';
+  const iso = admissao.split('T')[0];
+  const d = new Date(iso + 'T12:00:00');
+  if (isNaN(d.getTime())) return '—';
+  const now = new Date();
+  let years = now.getFullYear() - d.getFullYear();
+  let months = now.getMonth() - d.getMonth();
+  if (now.getDate() < d.getDate()) months--;
+  if (months < 0) { years--; months += 12; }
+  if (years < 0) return '—';
+  if (years === 0 && months === 0) {
+    const days = Math.floor((now - d) / 86400000);
+    return days >= 0 ? `${days}d` : '—';
+  }
+  if (years === 0) return `${months}m`;
+  if (months === 0) return `${years}a`;
+  return `${years}a ${months}m`;
+}
+
 function today() {
   return new Date().toISOString().split('T')[0];
 }
@@ -1552,6 +1596,9 @@ function refreshDashboard() {
     </div>
   `;
 
+  // Ranking de Faltas Injustificadas no ano corrente
+  renderFaltasInjustificadasRanking(filtered);
+
   // Header da última coluna
   const thPres = document.getElementById('day-detail-presenca-th');
   if (thPres) thPres.textContent = isRange ? 'Presença (intervalo)' : 'Presença';
@@ -1612,6 +1659,50 @@ function sortDayTable(col) {
   if (daySort.col === col) daySort.dir *= -1;
   else { daySort.col = col; daySort.dir = 1; }
   refreshDashboard();
+}
+
+// Ranking de faltas injustificadas no ano corrente
+function renderFaltasInjustificadasRanking(filtered) {
+  const year = String(new Date().getFullYear());
+  const yearEl = document.getElementById('dash-falta-year');
+  if (yearEl) yearEl.textContent = year;
+
+  const ranking = [];
+  filtered.forEach(r => {
+    const att = r.attendance || {};
+    let count = 0;
+    let last = '';
+    Object.keys(att).forEach(d => {
+      if (!d.startsWith(year + '-')) return;
+      if ((att[d] || '').trim().toUpperCase() !== 'INJUSTIFICADA') return;
+      count++;
+      if (d > last) last = d;
+    });
+    if (count > 0) ranking.push({ r, count, last });
+  });
+  ranking.sort((a,b) => b.count - a.count || a.r['COLABORADOR'].localeCompare(b.r['COLABORADOR']));
+
+  const countEl = document.getElementById('dash-falta-count');
+  const totalFaltas = ranking.reduce((s,x) => s + x.count, 0);
+  if (countEl) countEl.textContent = `${ranking.length} colaborador(es) — ${totalFaltas} falta(s)`;
+
+  const tbody = document.getElementById('dash-falta-body');
+  if (!tbody) return;
+  if (!ranking.length) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">✅</div>Nenhuma falta injustificada em ' + year + '</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = ranking.map(({r, count, last}) => `
+    <tr>
+      <td><strong>${r['COLABORADOR'] || ''}</strong></td>
+      <td>${teamBadge(r)}</td>
+      <td>${r['LÍDER'] || '—'}</td>
+      <td style="text-align:center"><span class="badge badge-falta-i" style="font-family:'DM Mono',monospace;font-weight:700">${count}</span></td>
+      <td>${last ? formatDate(last) : '—'}</td>
+      <td>${r['DATA ADMISSÃO'] ? formatDate(r['DATA ADMISSÃO']) : '—'}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:13px">${timeAtCompany(r['DATA ADMISSÃO'])}</td>
+    </tr>
+  `).join('');
 }
 
 function clearDashFilters() {
