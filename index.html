@@ -964,6 +964,10 @@ table.esc-cal td { position:relative; }
         <input type="date" id="dash-date-to" onchange="onDashDateChange('to')">
       </div>
       <div class="filter-group">
+        <label>🗓 Semana</label>
+        <select id="dash-week" onchange="onDashWeekChange(this)"></select>
+      </div>
+      <div class="filter-group">
         <label>🏢 Time</label>
         <select id="dash-team" onchange="refreshDashboard()">
           <option value="">Todos</option>
@@ -1798,12 +1802,79 @@ function dateRangeList(from, to) {
   return out;
 }
 
+// ── Semana ISO (Mon-Sun) helpers ──
+function getISOWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return { week: Math.ceil((((d - yearStart) / 86400000) + 1) / 7), year: d.getUTCFullYear() };
+}
+function getDatesOfISOWeek(year, week) {
+  // 4 de janeiro sempre está na semana 1 ISO
+  const jan4 = new Date(year, 0, 4);
+  const day = jan4.getDay() || 7;
+  const mondayW1 = new Date(year, 0, 4 - (day - 1));
+  const mondayWN = new Date(mondayW1);
+  mondayWN.setDate(mondayW1.getDate() + (week - 1) * 7);
+  const sundayWN = new Date(mondayWN);
+  sundayWN.setDate(mondayWN.getDate() + 6);
+  return { from: mondayWN.toISOString().slice(0,10), to: sundayWN.toISOString().slice(0,10) };
+}
+function populateWeekSelect() {
+  const sel = document.getElementById('dash-week');
+  if (!sel) return;
+  const now = new Date();
+  const year = now.getFullYear();
+  const cur = getISOWeek(now);
+  // Quantas semanas tem o ano (52 ou 53 — calcula via 31/12)
+  const last = getISOWeek(new Date(year, 11, 31)).week;
+  const totalWeeks = last === 1 ? 52 : last;   // se 31/12 cair na W1 do próximo ano, o ano teve 52
+  const opts = ['<option value="">— manual —</option>'];
+  for (let w = 1; w <= totalWeeks; w++) {
+    const { from, to } = getDatesOfISOWeek(year, w);
+    const fromBR = formatDate(from).slice(0,5);
+    const toBR   = formatDate(to).slice(0,5);
+    const sel2   = (cur.year === year && cur.week === w) ? ' selected' : '';
+    opts.push(`<option value="${w}"${sel2}>W${String(w).padStart(2,'0')} (${fromBR}–${toBR})</option>`);
+  }
+  sel.innerHTML = opts.join('');
+}
+function onDashWeekChange(sel) {
+  const w = parseInt(sel.value);
+  if (!w) return;   // "manual" — não mexe nas datas
+  const year = new Date().getFullYear();
+  const { from, to } = getDatesOfISOWeek(year, w);
+  document.getElementById('dash-date-from').value = from;
+  document.getElementById('dash-date-to').value   = to;
+  refreshDashboard();
+}
+
 function onDashDateChange(which) {
   const fromEl = document.getElementById('dash-date-from');
   const toEl   = document.getElementById('dash-date-to');
   if (which === 'from' && fromEl.value && (!toEl.value || toEl.value < fromEl.value)) toEl.value = fromEl.value;
   if (which === 'to'   && toEl.value   && (!fromEl.value || fromEl.value > toEl.value)) fromEl.value = toEl.value;
+  // Se a data manual não corresponde a uma semana ISO completa, volta o select pra "manual"
+  syncWeekSelect();
   refreshDashboard();
+}
+
+// Quando o usuário mexe nas datas manualmente, atualiza/limpa o select de semana
+function syncWeekSelect() {
+  const sel = document.getElementById('dash-week');
+  if (!sel) return;
+  const f = document.getElementById('dash-date-from').value;
+  const t = document.getElementById('dash-date-to').value;
+  if (!f || !t) { sel.value = ''; return; }
+  const fDate = new Date(f + 'T12:00:00');
+  const { week, year } = getISOWeek(fDate);
+  const expected = getDatesOfISOWeek(year, week);
+  if (expected.from === f && expected.to === t && year === new Date().getFullYear()) {
+    sel.value = String(week);
+  } else {
+    sel.value = '';
+  }
 }
 
 function refreshDashboard() {
@@ -2700,6 +2771,7 @@ function init() {
   document.getElementById('dash-date-from').value = t;
   document.getElementById('dash-date-to').value = t;
   document.getElementById('pres-date').value = t;
+  populateWeekSelect();
 
   // Default status filter to ATIVO
   document.getElementById('dash-status').value = 'ATIVO';
@@ -3208,6 +3280,7 @@ function init() {
   document.getElementById('dash-date-from').value = t;
   document.getElementById('dash-date-to').value = t;
   document.getElementById('pres-date').value = t;
+  populateWeekSelect();
   document.getElementById('dash-status').value = 'ATIVO';
   document.getElementById('pres-status').value = 'ATIVO';
   document.getElementById('col-status').value = 'ATIVO';
