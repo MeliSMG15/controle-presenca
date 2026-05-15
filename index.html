@@ -1428,21 +1428,9 @@ table.esc-cal td { position:relative; }
 
     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;margin:18px 0 6px">Líder que está aplicando</div>
     <div class="form-grid">
-      <div class="form-group">
+      <div class="form-group full">
         <label>Nome do líder *</label>
-        <input type="text" id="md-leader-name" placeholder="Nome completo">
-      </div>
-      <div class="form-group">
-        <label>Cargo do líder</label>
-        <input type="text" id="md-leader-cargo" placeholder="Ex: Team Leader">
-      </div>
-      <div class="form-group">
-        <label>LDAP do líder</label>
-        <input type="text" id="md-leader-ldap" placeholder="usuario">
-      </div>
-      <div class="form-group">
-        <label>Matrícula / ID Groot</label>
-        <input type="text" id="md-leader-id" placeholder="ID">
+        <input type="text" id="md-leader-name" placeholder="Nome completo do líder">
       </div>
     </div>
 
@@ -1458,8 +1446,7 @@ table.esc-cal td { position:relative; }
           <option value="">Selecione...</option>
           <option value="Verbal">Medida Disciplinar Verbal</option>
           <option value="Escrita">Medida Disciplinar Escrita</option>
-          <option value="Medida Disciplinar">Medida Disciplinar</option>
-          <option value="Suspensão">Suspensão</option>
+          <option value="Suspensão">Medida Disciplinar e Suspensão</option>
         </select>
       </div>
       <div class="form-group full">
@@ -2745,14 +2732,12 @@ function openMdModal() {
     .join('');
   // limpa todos os campos
   ['md-colab-input','md-colab-ldap','md-colab-cargo','md-colab-ciclo','md-colab-rota',
-   'md-colab-empresa','md-colab-lider','md-leader-name','md-leader-cargo','md-leader-ldap',
-   'md-leader-id','md-type','md-obs']
+   'md-colab-empresa','md-colab-lider','md-leader-name','md-type','md-obs']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('md-date').value = today();
   // pré-preenche o nome do líder com o usuário logado (mas deixa editável)
-  if (currentUser) {
-    document.getElementById('md-leader-name').value  = currentUser.displayName || '';
-    document.getElementById('md-leader-ldap').value  = (currentUser.email||'').split('@')[0];
+  if (currentUser && currentUser.displayName) {
+    document.getElementById('md-leader-name').value = currentUser.displayName;
   }
   document.getElementById('md-colab-hint').textContent = 'Selecione um colaborador da lista.';
   document.getElementById('md-colab-hint').style.color = 'var(--text3)';
@@ -2815,13 +2800,8 @@ function saveMd() {
   if (!date) { notify('Informe a data da falta', 'error'); return; }
   if (!type) { notify('Selecione o tipo de medida', 'error'); return; }
 
-  const leader = {
-    name:  document.getElementById('md-leader-name').value.trim(),
-    cargo: document.getElementById('md-leader-cargo').value.trim(),
-    ldap:  document.getElementById('md-leader-ldap').value.trim(),
-    id:    document.getElementById('md-leader-id').value.trim()
-  };
-  if (!leader.name) { notify('Informe o nome do líder que está aplicando a MD', 'error'); return; }
+  const leaderName = document.getElementById('md-leader-name').value.trim();
+  if (!leaderName) { notify('Informe o nome do líder que está aplicando a MD', 'error'); return; }
 
   const r = allData[idx];
   const entry = {
@@ -2838,8 +2818,8 @@ function saveMd() {
       empresa: r['EMPRESA'] || '',
       lider:   r['LÍDER'] || ''
     },
-    // Dados do líder que está aplicando (manualmente preenchidos)
-    leader,
+    // Nome do líder que está aplicando (manual)
+    leader: { name: leaderName },
     at: Date.now(),
     by: getCurrentEditor() || 'DESCONHECIDO',
     byEmail: getCurrentEditorEmail() || null
