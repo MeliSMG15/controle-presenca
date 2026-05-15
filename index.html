@@ -3,6 +3,7 @@
 <html lang="pt-BR">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <head>
 <meta charset="UTF-8">
@@ -770,16 +771,14 @@ table.esc-cal td { position:relative; }
   <div id="online-dot" style="width:7px;height:7px;border-radius:50%;background:var(--text3);transition:background 0.3s"></div>
   <span id="online-text">Conectando...</span>
 </div>
-<select id="cur-editor-select" title="Quem está editando — fica registrado em cada alteração" onchange="onEditorChange(this)" style="font-size:11px;font-family:'DM Mono',monospace;padding:6px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;outline:none">
-  <option value="">👤 Identifique-se</option>
-  <option value="CARLOS">👤 CARLOS</option>
-  <option value="GUILHERME">👤 GUILHERME</option>
-  <option value="LEANDRO">👤 LEANDRO</option>
-  <option value="NATHALIA">👤 NATHALIA</option>
-  <option value="VICTOR">👤 VICTOR</option>
-  <option value="CELSO">👤 CELSO</option>
-  <option value="__OUTRO__">+ Outro…</option>
-</select>
+<div id="auth-box" style="display:flex;align-items:center;gap:8px">
+  <button id="btn-auth-in" onclick="signInGoogle()" style="font-size:11px;font-family:'DM Mono',monospace;padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;display:none">🔐 Entrar com Google</button>
+  <div id="auth-user" style="display:none;align-items:center;gap:8px">
+    <img id="auth-avatar" src="" alt="" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border)">
+    <span id="auth-name" style="font-size:12px;color:var(--text);font-family:'DM Mono',monospace"></span>
+    <button onclick="signOutGoogle()" title="Sair" style="font-size:11px;padding:4px 8px;border-radius:14px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer">Sair</button>
+  </div>
+</div>
 <button id="btn-test-email" onclick="sendTestEmail()" title="Enviar email de teste (EmailJS)" style="font-size:11px;font-family:'DM Mono',monospace;padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer">✉ Teste</button>
 <div class="topbar-date" id="topbar-date"></div>
 </div>
@@ -1355,42 +1354,73 @@ function formatDate(d) {
   return d;
 }
 
-// ── Identificação do editor (audit log) ──
-let auditLog = {};   // chave: `${idx}_${date}` → { val, by, at }
+// ── Identificação do editor via Firebase Auth (Google) ──
+let auditLog = {};       // chave: `${idx}_${date}` → { val, by, at }
+let currentUser = null;  // objeto Firebase user logado
+
+const ALLOWED_DOMAIN = 'mercadolivre.com';
 
 function getCurrentEditor() {
-  return (localStorage.getItem('currentEditor') || '').trim().toUpperCase();
+  if (!currentUser) return '';
+  const email = (currentUser.email || '').toLowerCase();
+  const name  = (currentUser.displayName || '').trim();
+  // Pega só a parte antes do @ pra ser curto
+  const ldap  = email.split('@')[0].toUpperCase();
+  return name || ldap || email;
 }
-function setCurrentEditor(name) {
-  if (!name) localStorage.removeItem('currentEditor');
-  else localStorage.setItem('currentEditor', name.toUpperCase());
-  syncEditorSelect();
+function getCurrentEditorEmail() {
+  return currentUser ? (currentUser.email || '').toLowerCase() : '';
 }
-function syncEditorSelect() {
-  const sel = document.getElementById('cur-editor-select');
-  if (!sel) return;
-  const cur = getCurrentEditor();
-  const known = ['CARLOS','GUILHERME','LEANDRO','NATHALIA','VICTOR','CELSO'];
-  if (cur && !known.includes(cur)) {
-    // Insere nome custom como opção selecionada se ainda não existir
-    if (![...sel.options].some(o => o.value === cur)) {
-      const opt = document.createElement('option');
-      opt.value = cur; opt.text = '👤 ' + cur;
-      sel.insertBefore(opt, sel.querySelector('option[value="__OUTRO__"]'));
+function isAuthed() {
+  return !!currentUser;
+}
+
+function signInGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ hd: ALLOWED_DOMAIN });   // sugere conta do domínio
+  firebase.auth().signInWithPopup(provider).catch(err => {
+    console.error('[auth] signIn falhou', err);
+    notify('Falha no login: ' + (err.message || err.code || err), 'error');
+  });
+}
+function signOutGoogle() {
+  firebase.auth().signOut();
+}
+
+function onAuthChanged(user) {
+  if (user) {
+    const email = (user.email || '').toLowerCase();
+    if (!email.endsWith('@' + ALLOWED_DOMAIN)) {
+      notify(`Apenas contas @${ALLOWED_DOMAIN} são permitidas`, 'error');
+      firebase.auth().signOut();
+      return;
     }
   }
-  sel.value = cur || '';
-}
-function onEditorChange(sel) {
-  const v = sel.value;
-  if (v === '__OUTRO__') {
-    const custom = prompt('Digite seu nome (vai ficar registrado em cada alteração):');
-    sel.value = getCurrentEditor() || '';
-    if (custom && custom.trim()) setCurrentEditor(custom.trim());
-    return;
+  currentUser = user;
+  renderAuthUI();
+  // Re-render presença pra mostrar/esconder tooltips
+  if (document.getElementById('view-presenca')?.classList.contains('active')) {
+    refreshPresenca();
   }
-  setCurrentEditor(v);
-  if (v) notify('Identificado como ' + v);
+}
+
+function renderAuthUI() {
+  const btnIn   = document.getElementById('btn-auth-in');
+  const boxUser = document.getElementById('auth-user');
+  const avatar  = document.getElementById('auth-avatar');
+  const nameEl  = document.getElementById('auth-name');
+  if (!btnIn || !boxUser) return;
+  if (currentUser) {
+    btnIn.style.display = 'none';
+    boxUser.style.display = 'flex';
+    avatar.src = currentUser.photoURL || '';
+    avatar.style.display = currentUser.photoURL ? 'block' : 'none';
+    nameEl.textContent = currentUser.displayName || currentUser.email || '';
+    nameEl.title = currentUser.email || '';
+  } else {
+    btnIn.style.display = 'inline-block';
+    boxUser.style.display = 'none';
+  }
 }
 function formatAuditDate(ts) {
   if (!ts) return '';
@@ -1938,6 +1968,15 @@ function refreshPresenca() {
 }
 
 function updateAtt(sel) {
+  if (!isAuthed()) {
+    notify('Faça login com Google pra registrar presença', 'error');
+    // Reverte o select pro valor antigo
+    const idx0 = parseInt(sel.dataset.idx);
+    const date0 = sel.dataset.date;
+    const prev = (allData[idx0]?.attendance || {})[date0] || '';
+    sel.value = prev;
+    return;
+  }
   const idx = parseInt(sel.dataset.idx);
   const date = sel.dataset.date;
   const val = sel.value;
@@ -1946,12 +1985,12 @@ function updateAtt(sel) {
   // Salva no Firebase em tempo real
   db.ref(`presenca/data/${idx}/attendance/${date}`).set(val);
   // Audit log — quem fez a alteração e quando
-  const editor = getCurrentEditor() || 'DESCONHECIDO';
+  const editor = getCurrentEditor();
+  const email  = getCurrentEditorEmail();
   const at = Date.now();
-  const audit = { val, by: editor, at };
+  const audit = { val, by: editor, byEmail: email, at };
   db.ref(`presenca/auditLog/${idx}/${date}`).set(audit);
   auditLog[`${idx}_${date}`] = audit;
-  // Atualiza o tooltip da própria célula agora mesmo
   sel.title = `Marcado por ${editor} em ${formatAuditDate(at)}`;
   notify(`Presença salva (${editor}) ✓`);
 }
@@ -2792,7 +2831,8 @@ function init() {
   document.getElementById('pres-status').value = 'ATIVO';
   document.getElementById('col-status').value = 'ATIVO';
   document.getElementById('loading-overlay').classList.add('show');
-  syncEditorSelect();
+  renderAuthUI();
+  firebase.auth().onAuthStateChanged(onAuthChanged);
   initEmailJS();
   listenFirebase();
   // Checa periodicamente enquanto a página está aberta (após 10h dispara)
