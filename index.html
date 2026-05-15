@@ -772,7 +772,7 @@ table.esc-cal td { position:relative; }
   <span id="online-text">Conectando...</span>
 </div>
 <div id="auth-box" style="display:flex;align-items:center;gap:8px">
-  <button id="btn-auth-in" onclick="signInGoogle()" style="font-size:11px;font-family:'DM Mono',monospace;padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;display:none">🔐 Entrar com Google</button>
+  <button id="btn-auth-in" onclick="signInEmailLink()" style="font-size:11px;font-family:'DM Mono',monospace;padding:6px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;display:none">📧 Entrar por email</button>
   <div id="auth-user" style="display:none;align-items:center;gap:8px">
     <img id="auth-avatar" src="" alt="" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border)">
     <span id="auth-name" style="font-size:12px;color:var(--text);font-family:'DM Mono',monospace"></span>
@@ -1375,16 +1375,54 @@ function isAuthed() {
   return !!currentUser;
 }
 
-function signInGoogle() {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  provider.setCustomParameters({ hd: ALLOWED_DOMAIN });   // sugere conta do domínio
-  firebase.auth().signInWithPopup(provider).catch(err => {
-    console.error('[auth] signIn falhou', err);
-    notify('Falha no login: ' + (err.message || err.code || err), 'error');
-  });
+function signInEmailLink() {
+  const email = (prompt(`Digite seu email @${ALLOWED_DOMAIN}:`) || '').trim().toLowerCase();
+  if (!email) return;
+  if (!email.endsWith('@' + ALLOWED_DOMAIN)) {
+    notify(`Apenas emails @${ALLOWED_DOMAIN} são permitidos`, 'error');
+    return;
+  }
+  const actionCodeSettings = {
+    url: window.location.origin + window.location.pathname,
+    handleCodeInApp: true
+  };
+  const btn = document.getElementById('btn-auth-in');
+  if (btn) { btn.disabled = true; btn.textContent = '📧 Enviando...'; }
+  firebase.auth().sendSignInLinkToEmail(email, actionCodeSettings)
+    .then(() => {
+      localStorage.setItem('emailForSignIn', email);
+      notify(`Link enviado pra ${email}. Verifica seu inbox (pode estar em spam) e clica no link.`);
+      if (btn) { btn.disabled = false; btn.textContent = '📧 Link enviado'; }
+    })
+    .catch(err => {
+      console.error('[auth] sendSignInLink falhou', err);
+      notify('Falha ao enviar link: ' + (err.message || err.code || err), 'error');
+      if (btn) { btn.disabled = false; btn.textContent = '📧 Entrar por email'; }
+    });
 }
+
+function completeEmailLinkSignIn() {
+  if (!firebase.auth().isSignInWithEmailLink(window.location.href)) return;
+  let email = localStorage.getItem('emailForSignIn');
+  if (!email) {
+    email = (prompt('Confirme seu email pra completar o login:') || '').trim().toLowerCase();
+  }
+  if (!email) return;
+  firebase.auth().signInWithEmailLink(email, window.location.href)
+    .then(() => {
+      localStorage.removeItem('emailForSignIn');
+      // Limpa o token da URL pra não revoar se recarregar
+      history.replaceState(null, '', window.location.pathname);
+      notify('Login concluído ✓');
+    })
+    .catch(err => {
+      console.error('[auth] signInWithEmailLink falhou', err);
+      notify('Falha ao completar login: ' + (err.message || err.code || err), 'error');
+    });
+}
+
 function signOutGoogle() {
-  firebase.auth().signOut();
+  firebase.auth().signOut().then(() => notify('Sessão encerrada'));
 }
 
 function onAuthChanged(user) {
@@ -2832,6 +2870,7 @@ function init() {
   document.getElementById('col-status').value = 'ATIVO';
   document.getElementById('loading-overlay').classList.add('show');
   renderAuthUI();
+  completeEmailLinkSignIn();
   firebase.auth().onAuthStateChanged(onAuthChanged);
   initEmailJS();
   listenFirebase();
