@@ -880,6 +880,8 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
 .esc-group-badge.S { background:#64748b; color:#e8edf5; }
 .esc-group-count { font-family:'DM Mono',monospace; font-size:13px; color:var(--text2); background:var(--surface2); padding:6px 14px; border-radius:14px; border:1px solid var(--border); font-weight:600; }
 .esc-member-list { flex:1; max-height:460px; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+.esc-groups-row.expanded .esc-member-list { max-height:none; overflow:visible; }
+.esc-groups-row.expanded .esc-group-card { min-height:auto; }
 .esc-member { padding:10px 12px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; font-size:14px; display:flex; justify-content:space-between; align-items:center; cursor:grab; user-select:none; transition: opacity 0.15s, background 0.15s; }
 .esc-member:hover { background:var(--surface3); border-color:var(--border2); }
 .esc-member:active { cursor:grabbing; }
@@ -1238,6 +1240,10 @@ table.esc-cal td { position:relative; }
       <div class="filter-group">
         <label>🔎 Buscar</label>
         <input type="text" class="search-input" id="esc-search" placeholder="Nome..." oninput="refreshEscala()">
+      </div>
+      <div class="filter-group" style="justify-content:flex-end">
+        <label>&nbsp;</label>
+        <button class="btn btn-ghost" id="btn-expand-groups" onclick="toggleExpandGroups()" title="Mostra todos os nomes de cada grupo (ideal pra print)">📋 Expandir grupos</button>
       </div>
     </div>
 
@@ -3041,6 +3047,15 @@ function refreshEscala() {
 
   // Calendário do mês selecionado
   renderEscalaCalendar();
+}
+
+// Alterna entre modo compacto (scroll) e expandido (todos os nomes visíveis)
+function toggleExpandGroups() {
+  const row = document.getElementById('esc-groups');
+  const btn = document.getElementById('btn-expand-groups');
+  if (!row) return;
+  const expanded = row.classList.toggle('expanded');
+  if (btn) btn.textContent = expanded ? '🗜 Compactar grupos' : '📋 Expandir grupos';
 }
 
 // ── Drag and drop entre grupos da Escala ──
