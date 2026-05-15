@@ -2298,14 +2298,19 @@ function renderFaltasInjustificadasRanking(filtered) {
     tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="icon">✅</div>Nenhuma falta injustificada em ' + year + '</div></td></tr>';
     return;
   }
-  // Helper: contagem de MDs por idx + breakdown por tipo
+  // Helper: contagem + detalhamento por MD (com líder e data de aplicação)
   function mdSummary(idx) {
     const list = disciplinares[idx];
     if (!list) return { total: 0, tooltip: 'Sem MDs aplicadas' };
     const entries = Object.values(list);
-    const byType = {};
-    entries.forEach(e => { byType[e.type] = (byType[e.type]||0) + 1; });
-    const tip = entries.length + ' MD(s): ' + Object.entries(byType).map(([t,n]) => `${n}× ${t}`).join(', ');
+    // Ordena pela data de aplicação (mais antiga primeiro)
+    entries.sort((a, b) => (a.at || 0) - (b.at || 0));
+    const lines = entries.map(e => {
+      const leader  = (e.leader && e.leader.name) ? e.leader.name : (e.by || '—');
+      const applied = e.at ? formatAuditDate(e.at) : (e.date ? formatDate(e.date) : '—');
+      return `• ${e.type} — aplicada por ${leader} em ${applied}`;
+    });
+    const tip = `${entries.length} MD(s) aplicada(s):\n` + lines.join('\n');
     return { total: entries.length, tooltip: tip };
   }
   tbody.innerHTML = ranking.map(({r, count, last}) => {
