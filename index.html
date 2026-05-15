@@ -700,6 +700,19 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Faltas breakdown (Dashboard) ── */
+.falta-breakdown { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:14px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
+@media (max-width: 900px) { .falta-breakdown { grid-template-columns:1fr; } }
+.fb-card { background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+.fb-title { font-size:11px; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:10px; }
+.fb-list { display:flex; flex-direction:column; gap:6px; max-height:200px; overflow:auto; }
+.fb-row { display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:4px 8px; background:var(--surface); border:1px solid var(--border); border-radius:6px; }
+.fb-row-name { color:var(--text); font-weight:500; }
+.fb-row-vals { font-family:'DM Mono',monospace; font-size:12px; color:var(--text2); display:flex; gap:8px; }
+.fb-row-vals .fb-pp { color:#f87171; font-weight:700; }
+.fb-row-vals .fb-tot { color:var(--text3); }
+.fb-empty { color:var(--text3); font-size:12px; padding:8px; text-align:center; }
+
 /* ── Escala ── */
 .esc-groups-row { display:grid; grid-template-columns:repeat(4,1fr); gap:18px; margin-bottom:24px; }
 @media (max-width: 1100px) { .esc-groups-row { grid-template-columns:repeat(2,1fr); } }
@@ -820,6 +833,20 @@ table.esc-cal td { position:relative; }
       <div class="table-header">
         <span class="table-title">🚨 Faltas Injustificadas — <span id="dash-falta-year"></span></span>
         <span class="table-count" id="dash-falta-count">0 colaboradores</span>
+      </div>
+      <div class="falta-breakdown" id="dash-falta-breakdown">
+        <div class="fb-card">
+          <div class="fb-title">Por Time</div>
+          <div class="fb-list" id="fb-team"></div>
+        </div>
+        <div class="fb-card">
+          <div class="fb-title">Por Líder</div>
+          <div class="fb-list" id="fb-lider"></div>
+        </div>
+        <div class="fb-card">
+          <div class="fb-title">Por Ciclo</div>
+          <div class="fb-list" id="fb-ciclo"></div>
+        </div>
       </div>
       <div class="table-scroll">
         <table id="dash-falta-table">
@@ -1717,9 +1744,48 @@ function renderFaltasInjustificadasRanking(filtered) {
   const totalFaltas = ranking.reduce((s,x) => s + x.count, 0);
   if (countEl) countEl.textContent = `${ranking.length} colaborador(es) — ${totalFaltas} falta(s)`;
 
+  // Breakdown: por Time / Líder / Ciclo
+  function teamLabel(r) {
+    if (isMeli(r)) return 'MELI';
+    if (isPartTime(r)) return 'PART TIME';
+    return 'TEMP';
+  }
+  function aggregate(keyFn) {
+    const m = new Map(); // key → { ofensores, faltas }
+    ranking.forEach(({r, count}) => {
+      const k = keyFn(r) || '—';
+      const entry = m.get(k) || { ofensores: 0, faltas: 0 };
+      entry.ofensores += 1;
+      entry.faltas    += count;
+      m.set(k, entry);
+    });
+    return [...m.entries()]
+      .sort((a,b) => b[1].ofensores - a[1].ofensores || b[1].faltas - a[1].faltas || a[0].localeCompare(b[0]));
+  }
+  function renderBreakdown(elId, rows) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!rows.length) { el.innerHTML = '<div class="fb-empty">—</div>'; return; }
+    el.innerHTML = rows.map(([k, v]) =>
+      `<div class="fb-row">
+        <span class="fb-row-name">${k}</span>
+        <span class="fb-row-vals">
+          <span class="fb-pp">${v.ofensores} ofensor${v.ofensores>1?'es':''}</span>
+          <span class="fb-tot">${v.faltas} falta${v.faltas>1?'s':''}</span>
+        </span>
+      </div>`).join('');
+  }
+  renderBreakdown('fb-team',  aggregate(teamLabel));
+  renderBreakdown('fb-lider', aggregate(r => (r['LÍDER']||'').trim().toUpperCase()));
+  renderBreakdown('fb-ciclo', aggregate(r => (r['CICLO']||'').trim().toUpperCase()));
+
   const tbody = document.getElementById('dash-falta-body');
   if (!tbody) return;
   if (!ranking.length) {
+    ['fb-team','fb-lider','fb-ciclo'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<div class="fb-empty">Sem ofensores em ' + year + '</div>';
+    });
     tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">✅</div>Nenhuma falta injustificada em ' + year + '</div></td></tr>';
     return;
   }
