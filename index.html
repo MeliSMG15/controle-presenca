@@ -9,7 +9,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Registro de Presença · MELI SMG15</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='8' fill='%23FFE600'/%3E%3Cpath d='M6 24 Q10 14 15 19 Q19 24 22 20 Q25 16 29 20 Q34 24 38 16' stroke='%232D3277' stroke-width='3.5' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="logo-ml.png">
+<link rel="alternate icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='8' fill='%23FFE600'/%3E%3Cpath d='M6 24 Q10 14 15 19 Q19 24 22 20 Q25 16 29 20 Q34 24 38 16' stroke='%232D3277' stroke-width='3.5' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -67,14 +68,20 @@ body {
 }
 
 .brand-icon {
-  width: 42px;
-  height: 30px;
-  background: var(--meli);
-  border-radius: 6px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(255, 230, 0, 0.18);
+  overflow: hidden;
+  background: transparent;
+}
+.brand-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 .brand-icon svg { display: block; }
 
@@ -869,11 +876,8 @@ table.esc-cal td { position:relative; }
 <div class="topbar">
   <div class="topbar-brand">
     <div class="brand-icon" title="Mercado Livre">
-      <svg viewBox="0 0 40 28" width="34" height="22" xmlns="http://www.w3.org/2000/svg" aria-label="ML">
-        <path d="M4 18 Q8 8 13 13 Q17 18 20 14 Q23 10 27 14 Q32 18 36 10" stroke="#2D3277" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        <circle cx="10" cy="12" r="1.6" fill="#2D3277"/>
-        <circle cx="30" cy="12" r="1.6" fill="#2D3277"/>
-      </svg>
+      <img src="logo-ml.png" alt="Mercado Livre" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <span class="brand-fallback" style="display:none;font-weight:900;color:#2D3277;font-size:14px;letter-spacing:-1px">ML</span>
     </div>
     <div>
       <div class="brand-name">Registro de Presença</div>
@@ -2109,20 +2113,23 @@ function refreshPresenca() {
   if (attFilter && date) rows = rows.filter(r => getEffectiveAtt(r, date).toUpperCase() === attFilter.toUpperCase());
 
   // Stats
-  let presente=0, just=0, injust=0, folga=0, total=rows.length;
+  let presente=0, just=0, injust=0, folga=0, pendente=0, total=rows.length;
   if (date) rows.forEach(r => {
     const av = getEffectiveAtt(r, date).toUpperCase();
     if (av === 'PRESENTE') presente++;
     else if (av === 'JUSTIFICADA') just++;
     else if (av === 'INJUSTIFICADA') injust++;
     else if (av === 'FOLGA DSR') folga++;
+    else if (av === '') pendente++;   // sem registro e sem DSR planejado
   });
+  const pctPend = (date && total > 0) ? Math.round(pendente / total * 100) : 0;
 
   document.getElementById('pres-stats').innerHTML = `
     <div class="stat-card green"><div class="stat-label">Presentes</div><div class="stat-value">${date?presente:'—'}</div></div>
     <div class="stat-card yellow"><div class="stat-label">Justificadas</div><div class="stat-value">${date?just:'—'}</div></div>
     <div class="stat-card red"><div class="stat-label">Injustificadas</div><div class="stat-value">${date?injust:'—'}</div></div>
     <div class="stat-card purple"><div class="stat-label">Folga DSR</div><div class="stat-value">${date?folga:'—'}</div></div>
+    <div class="stat-card orange"><div class="stat-label">Sem registro</div><div class="stat-value">${date?pendente:'—'}</div><div class="stat-sub">${date ? pctPend + '% pendente' : 'Selecione data'}</div></div>
     <div class="stat-card blue"><div class="stat-label">Total Filtrado</div><div class="stat-value">${total}</div></div>
   `;
 
