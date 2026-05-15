@@ -274,6 +274,11 @@ select option { background: var(--surface2); }
   gap: 14px;
   margin-bottom: 20px;
 }
+.stats-grid-hc  { grid-template-columns: repeat(4, 1fr); }
+.stats-grid-day { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1100px) {
+  .stats-grid-hc, .stats-grid-day { grid-template-columns: repeat(2, 1fr); }
+}
 
 .stat-card {
   background: var(--surface);
@@ -907,7 +912,8 @@ table.esc-cal td { position:relative; }
       <button class="btn btn-ghost" onclick="clearDashFilters()">✕ Limpar</button>
     </div>
 
-    <div class="stats-grid" id="dash-stats"></div>
+    <div class="stats-grid stats-grid-hc" id="dash-stats-hc"></div>
+    <div class="stats-grid stats-grid-day" id="dash-stats-day"></div>
 
     <div class="teams-grid" id="dash-teams"></div>
 
@@ -1729,12 +1735,32 @@ function refreshDashboard() {
   const totalDen  = isRange ? total * dates.length : total;
   const pctRange  = totalDen > 0 ? Math.round(presente / totalDen * 100) : 0;
 
-  document.getElementById('dash-stats').innerHTML = `
+  // Linha 1 — HC totais por time
+  document.getElementById('dash-stats-hc').innerHTML = `
     <div class="stat-card blue">
       <div class="stat-label">Total Colaboradores</div>
       <div class="stat-value">${total}</div>
       <div class="stat-sub">${status === 'ATIVO' ? 'ativos' : 'filtrados'}</div>
     </div>
+    <div class="stat-card meli">
+      <div class="stat-label">Time MELI</div>
+      <div class="stat-value">${meliTotal}</div>
+      <div class="stat-sub">${hasDate ? meliPresente + ' presenças' : 'colaboradores'}</div>
+    </div>
+    <div class="stat-card cyan" style="--cyan2:#22d3ee">
+      <div class="stat-label">Part Time</div>
+      <div class="stat-value" style="color:#22d3ee">${ptTotal}</div>
+      <div class="stat-sub">${hasDate ? ptPresente + ' presenças' : 'colaboradores'}</div>
+    </div>
+    <div class="stat-card temp">
+      <div class="stat-label">Temporários</div>
+      <div class="stat-value">${tempTotal}</div>
+      <div class="stat-sub">${hasDate ? tempPresente + ' presenças' : 'colaboradores'}</div>
+    </div>
+  `;
+
+  // Linha 2 — Estatísticas do dia/intervalo
+  document.getElementById('dash-stats-day').innerHTML = `
     <div class="stat-card green">
       <div class="stat-label">Presentes ${dateLabel}</div>
       <div class="stat-value">${hasDate ? presente : '—'}</div>
@@ -1760,21 +1786,6 @@ function refreshDashboard() {
       <div class="stat-label">Férias</div>
       <div class="stat-value" style="color:#22d3ee">${hasDate ? ferias : '—'}</div>
       <div class="stat-sub">${hasDate ? subTxt : ''}</div>
-    </div>
-    <div class="stat-card meli">
-      <div class="stat-label">Time MELI</div>
-      <div class="stat-value">${meliTotal}</div>
-      <div class="stat-sub">${hasDate ? meliPresente + ' presenças' : 'colaboradores'}</div>
-    </div>
-    <div class="stat-card cyan" style="--cyan2:#22d3ee">
-      <div class="stat-label">Part Time</div>
-      <div class="stat-value" style="color:#22d3ee">${ptTotal}</div>
-      <div class="stat-sub">${hasDate ? ptPresente + ' presenças' : 'colaboradores'}</div>
-    </div>
-    <div class="stat-card temp">
-      <div class="stat-label">Temporários</div>
-      <div class="stat-value">${tempTotal}</div>
-      <div class="stat-sub">${hasDate ? tempPresente + ' presenças' : 'colaboradores'}</div>
     </div>
   `;
 
