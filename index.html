@@ -1037,6 +1037,7 @@ table.esc-cal td { position:relative; }
               <th>Time</th>
               <th>Líder</th>
               <th style="text-align:center">Faltas no ano</th>
+              <th style="text-align:center" title="Medidas Disciplinares aplicadas">MDs</th>
               <th>Última falta</th>
               <th>Admissão</th>
               <th>Tempo de casa</th>
@@ -1119,7 +1120,10 @@ table.esc-cal td { position:relative; }
 
     <div class="table-wrap">
       <div class="table-header">
-        <span class="table-title">Registro do Dia</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="table-title">Registro do Dia</span>
+          <button class="btn btn-ghost" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px" onclick="openMdModal()">⚠ Aplicar MD</button>
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="pres-count">0 colaboradores</span>
           <button class="btn btn-primary" onclick="savePresencaChanges()">💾 Salvar Alterações</button>
@@ -1379,6 +1383,95 @@ table.esc-cal td { position:relative; }
       <div style="flex:1"></div>
       <button class="btn btn-ghost" onclick="closeEditModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveEditColaborador()">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MEDIDA DISCIPLINAR MODAL -->
+<div class="modal-overlay" id="modal-md">
+  <div class="modal" style="width:680px">
+    <div class="modal-title">⚠️ Aplicar Medida Disciplinar</div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;margin:8px 0 6px">Colaborador</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Nome do colaborador *</label>
+        <input type="text" id="md-colab-input" list="md-colab-list" placeholder="Comece a digitar o nome..." autocomplete="off" oninput="onMdColabChange()" onchange="onMdColabChange()">
+        <datalist id="md-colab-list"></datalist>
+        <div id="md-colab-hint" style="font-size:11px;color:var(--text3);margin-top:4px">Selecione um colaborador da lista.</div>
+      </div>
+      <div class="form-group">
+        <label>LDAP</label>
+        <input type="text" id="md-colab-ldap" readonly placeholder="Auto-preenchido">
+      </div>
+      <div class="form-group">
+        <label>Cargo</label>
+        <input type="text" id="md-colab-cargo" readonly placeholder="Auto-preenchido">
+      </div>
+      <div class="form-group">
+        <label>Ciclo</label>
+        <input type="text" id="md-colab-ciclo" readonly placeholder="Auto-preenchido">
+      </div>
+      <div class="form-group">
+        <label>Rota</label>
+        <input type="text" id="md-colab-rota" readonly placeholder="Auto-preenchido">
+      </div>
+      <div class="form-group">
+        <label>Empresa</label>
+        <input type="text" id="md-colab-empresa" readonly placeholder="Auto-preenchido">
+      </div>
+      <div class="form-group">
+        <label>Líder cadastrado</label>
+        <input type="text" id="md-colab-lider" readonly placeholder="Auto-preenchido">
+      </div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;margin:18px 0 6px">Líder que está aplicando</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Nome do líder *</label>
+        <input type="text" id="md-leader-name" placeholder="Nome completo">
+      </div>
+      <div class="form-group">
+        <label>Cargo do líder</label>
+        <input type="text" id="md-leader-cargo" placeholder="Ex: Team Leader">
+      </div>
+      <div class="form-group">
+        <label>LDAP do líder</label>
+        <input type="text" id="md-leader-ldap" placeholder="usuario">
+      </div>
+      <div class="form-group">
+        <label>Matrícula / ID Groot</label>
+        <input type="text" id="md-leader-id" placeholder="ID">
+      </div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;margin:18px 0 6px">Medida</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Data da falta injustificada *</label>
+        <input type="date" id="md-date">
+      </div>
+      <div class="form-group">
+        <label>Medida aplicada *</label>
+        <select id="md-type">
+          <option value="">Selecione...</option>
+          <option value="Verbal">Medida Disciplinar Verbal</option>
+          <option value="Escrita">Medida Disciplinar Escrita</option>
+          <option value="Medida Disciplinar">Medida Disciplinar</option>
+          <option value="Suspensão">Suspensão</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Observação (opcional)</label>
+        <input type="text" id="md-obs" placeholder="Detalhes adicionais...">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="closeMdModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveMd()">💾 Registrar MD</button>
     </div>
   </div>
 </div>
@@ -2215,20 +2308,37 @@ function renderFaltasInjustificadasRanking(filtered) {
       const el = document.getElementById(id);
       if (el) el.innerHTML = '<div class="fb-empty">Sem ofensores em ' + year + '</div>';
     });
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">✅</div>Nenhuma falta injustificada em ' + year + '</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="icon">✅</div>Nenhuma falta injustificada em ' + year + '</div></td></tr>';
     return;
   }
-  tbody.innerHTML = ranking.map(({r, count, last}) => `
+  // Helper: contagem de MDs por idx + breakdown por tipo
+  function mdSummary(idx) {
+    const list = disciplinares[idx];
+    if (!list) return { total: 0, tooltip: 'Sem MDs aplicadas' };
+    const entries = Object.values(list);
+    const byType = {};
+    entries.forEach(e => { byType[e.type] = (byType[e.type]||0) + 1; });
+    const tip = entries.length + ' MD(s): ' + Object.entries(byType).map(([t,n]) => `${n}× ${t}`).join(', ');
+    return { total: entries.length, tooltip: tip };
+  }
+  tbody.innerHTML = ranking.map(({r, count, last}) => {
+    const idx = allData.indexOf(r);
+    const md = mdSummary(idx);
+    const mdBadge = md.total > 0
+      ? `<span title="${md.tooltip}" style="display:inline-block;padding:3px 9px;background:rgba(245,158,11,0.15);color:var(--yellow);border:1px solid rgba(245,158,11,0.4);border-radius:10px;font-family:'DM Mono',monospace;font-size:12px;font-weight:700">${md.total}</span>`
+      : `<span style="color:var(--text3);font-size:12px">—</span>`;
+    return `
     <tr>
       <td><strong>${r['COLABORADOR'] || ''}</strong></td>
       <td>${teamBadge(r)}</td>
       <td>${r['LÍDER'] || '—'}</td>
       <td style="text-align:center"><span class="badge badge-falta-i" style="font-family:'DM Mono',monospace;font-weight:700">${count}</span></td>
+      <td style="text-align:center">${mdBadge}</td>
       <td>${last ? formatDate(last) : '—'}</td>
       <td>${r['DATA ADMISSÃO'] ? formatDate(r['DATA ADMISSÃO']) : '—'}</td>
       <td style="font-family:'DM Mono',monospace;font-size:13px">${timeAtCompany(r['DATA ADMISSÃO'])}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 function clearDashFilters() {
@@ -2621,6 +2731,130 @@ function downloadQr() {
   document.body.removeChild(a);
 }
 
+// ── Medidas Disciplinares ──
+// disciplinares = { [idx]: [ {date, type, obs, at, by}, ... ] }
+let disciplinares = {};
+
+function openMdModal() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode aplicar MD')) return;
+  // popula datalist com nomes dos colaboradores ATIVOS
+  const dl = document.getElementById('md-colab-list');
+  dl.innerHTML = allData
+    .filter(r => isActive(r))
+    .map(r => `<option value="${(r['COLABORADOR']||'').replace(/"/g,'&quot;')}">`)
+    .join('');
+  // limpa todos os campos
+  ['md-colab-input','md-colab-ldap','md-colab-cargo','md-colab-ciclo','md-colab-rota',
+   'md-colab-empresa','md-colab-lider','md-leader-name','md-leader-cargo','md-leader-ldap',
+   'md-leader-id','md-type','md-obs']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('md-date').value = today();
+  // pré-preenche o nome do líder com o usuário logado (mas deixa editável)
+  if (currentUser) {
+    document.getElementById('md-leader-name').value  = currentUser.displayName || '';
+    document.getElementById('md-leader-ldap').value  = (currentUser.email||'').split('@')[0];
+  }
+  document.getElementById('md-colab-hint').textContent = 'Selecione um colaborador da lista.';
+  document.getElementById('md-colab-hint').style.color = 'var(--text3)';
+  document.getElementById('modal-md').classList.add('open');
+  setTimeout(() => document.getElementById('md-colab-input').focus(), 50);
+}
+function closeMdModal() {
+  document.getElementById('modal-md').classList.remove('open');
+}
+function findColabByName(name) {
+  const n = (name||'').trim().toUpperCase();
+  if (!n) return -1;
+  return allData.findIndex(r => (r['COLABORADOR']||'').trim().toUpperCase() === n);
+}
+// Auto-preenche LDAP/Cargo/Ciclo/Rota/Empresa/Líder cadastrado conforme o nome digitado
+function onMdColabChange() {
+  const nome = document.getElementById('md-colab-input').value;
+  const hint = document.getElementById('md-colab-hint');
+  const fields = {
+    'md-colab-ldap':    'LDAP',
+    'md-colab-cargo':   'CARGO',
+    'md-colab-ciclo':   'CICLO',
+    'md-colab-rota':    'ROTA',
+    'md-colab-empresa': 'EMPRESA',
+    'md-colab-lider':   'LÍDER'
+  };
+  const idx = findColabByName(nome);
+  if (idx === -1) {
+    Object.keys(fields).forEach(id => document.getElementById(id).value = '');
+    if (nome.trim()) {
+      hint.textContent = 'Colaborador não encontrado — escolha da lista.';
+      hint.style.color = '#f87171';
+    } else {
+      hint.textContent = 'Selecione um colaborador da lista.';
+      hint.style.color = 'var(--text3)';
+    }
+    return;
+  }
+  const r = allData[idx];
+  Object.entries(fields).forEach(([id, key]) => {
+    document.getElementById(id).value = (r[key]||'').trim();
+  });
+  hint.textContent = '✓ Encontrado: ' + (r['COLABORADOR']||'');
+  hint.style.color = '#34d399';
+}
+function saveMd() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode aplicar MD')) return;
+  const nome = document.getElementById('md-colab-input').value.trim();
+  const date = document.getElementById('md-date').value;
+  const type = document.getElementById('md-type').value;
+  const obs  = document.getElementById('md-obs').value.trim();
+  const hint = document.getElementById('md-colab-hint');
+
+  const idx = findColabByName(nome);
+  if (idx === -1) {
+    hint.textContent = 'Colaborador não encontrado — escolha da lista.';
+    hint.style.color = '#f87171';
+    return;
+  }
+  if (!date) { notify('Informe a data da falta', 'error'); return; }
+  if (!type) { notify('Selecione o tipo de medida', 'error'); return; }
+
+  const leader = {
+    name:  document.getElementById('md-leader-name').value.trim(),
+    cargo: document.getElementById('md-leader-cargo').value.trim(),
+    ldap:  document.getElementById('md-leader-ldap').value.trim(),
+    id:    document.getElementById('md-leader-id').value.trim()
+  };
+  if (!leader.name) { notify('Informe o nome do líder que está aplicando a MD', 'error'); return; }
+
+  const r = allData[idx];
+  const entry = {
+    date,
+    type,
+    obs: obs || null,
+    // Snapshot dos dados do colaborador no momento da MD
+    colab: {
+      nome:    r['COLABORADOR'] || '',
+      ldap:    r['LDAP'] || '',
+      cargo:   r['CARGO'] || '',
+      ciclo:   r['CICLO'] || '',
+      rota:    r['ROTA'] || '',
+      empresa: r['EMPRESA'] || '',
+      lider:   r['LÍDER'] || ''
+    },
+    // Dados do líder que está aplicando (manualmente preenchidos)
+    leader,
+    at: Date.now(),
+    by: getCurrentEditor() || 'DESCONHECIDO',
+    byEmail: getCurrentEditorEmail() || null
+  };
+  db.ref(`presenca/disciplinares/${idx}`).push(entry)
+    .then(() => {
+      notify(`MD (${type}) registrada pra ${r['COLABORADOR']}`);
+      closeMdModal();
+    })
+    .catch(err => {
+      console.error(err);
+      notify('Falha ao salvar: ' + (err.message || err), 'error');
+    });
+}
+
 function saveEditColaborador() {
   if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode editar colaboradores')) return;
   if (editingIndex === null) return;
@@ -2837,6 +3071,13 @@ function listenFirebase() {
     escalaOverrides = snap.val() || {};
     if (document.getElementById('view-escala')?.classList.contains('active')) {
       renderEscalaCalendar();
+    }
+  });
+  // Medidas Disciplinares por colaborador
+  db.ref('presenca/disciplinares').on('value', snap => {
+    disciplinares = snap.val() || {};
+    if (document.getElementById('view-dashboard')?.classList.contains('active')) {
+      refreshDashboard();
     }
   });
   // Audit log — quem alterou cada presença
