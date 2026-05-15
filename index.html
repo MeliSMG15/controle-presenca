@@ -880,9 +880,13 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
 .esc-group-badge.S { background:#64748b; color:#e8edf5; }
 .esc-group-count { font-family:'DM Mono',monospace; font-size:13px; color:var(--text2); background:var(--surface2); padding:6px 14px; border-radius:14px; border:1px solid var(--border); font-weight:600; }
 .esc-member-list { flex:1; max-height:460px; overflow:auto; display:flex; flex-direction:column; gap:6px; }
-.esc-member { padding:10px 12px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; font-size:14px; display:flex; justify-content:space-between; align-items:center; }
+.esc-member { padding:10px 12px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; font-size:14px; display:flex; justify-content:space-between; align-items:center; cursor:grab; user-select:none; transition: opacity 0.15s, background 0.15s; }
 .esc-member:hover { background:var(--surface3); border-color:var(--border2); }
-.esc-member small { color:var(--text3); font-size:11px; font-family:'DM Mono',monospace; }
+.esc-member:active { cursor:grabbing; }
+.esc-member.dragging { opacity:0.4; cursor:grabbing; }
+.esc-member small { color:var(--text3); font-size:11px; font-family:'DM Mono',monospace; pointer-events:none; }
+.esc-group-card.drag-over { background:rgba(255,230,0,0.06); border-color:var(--meli); box-shadow: 0 0 0 2px rgba(255,230,0,0.25) inset; }
+body.read-only .esc-member { cursor:not-allowed; }
 .esc-cal-wrap { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; overflow:auto; }
 .esc-cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .esc-cal-title { font-weight:700; font-size:16px; }
@@ -3005,20 +3009,25 @@ function refreshEscala() {
     if (byGroup[g]) byGroup[g].push(r); else byGroup.S.push(r);
   });
 
+  const editable = canEdit();
   document.getElementById('esc-groups').innerHTML = groups.map(grp => {
     const g = grp.key;
     const members = byGroup[g].slice().sort((a,b) =>
       (a['COLABORADOR']||'').localeCompare(b['COLABORADOR']||''));
     const list = members.length
-      ? members.map(m =>
-          `<div class="esc-member">
+      ? members.map(m => {
+          const idx = allData.indexOf(m);
+          return `<div class="esc-member" draggable="${editable?'true':'false'}" data-idx="${idx}"
+                       ondragstart="onMemberDragStart(event)" ondragend="onMemberDragEnd(event)">
              <span>${m['COLABORADOR']||''}</span>
              <small>${(m['EMPRESA']||'').trim() || '—'}</small>
-           </div>`).join('')
+           </div>`;
+        }).join('')
       : '<div style="color:var(--text3);font-size:13px;padding:12px;text-align:center">Nenhum colaborador</div>';
     const badgeChar = (g === 'S') ? '∅' : g;
     return `
-      <div class="esc-group-card">
+      <div class="esc-group-card" data-group="${g}"
+           ondragover="onGroupDragOver(event)" ondragleave="onGroupDragLeave(event)" ondrop="onGroupDrop(event)">
         <div class="esc-group-head">
           <div class="esc-group-title">
             <div class="esc-group-badge ${g}">${badgeChar}</div>
@@ -3032,6 +3041,57 @@ function refreshEscala() {
 
   // Calendário do mês selecionado
   renderEscalaCalendar();
+}
+
+// ── Drag and drop entre grupos da Escala ──
+function onMemberDragStart(e) {
+  if (!canEdit()) {
+    e.preventDefault();
+    guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode mover colaboradores');
+    return;
+  }
+  const idx = e.currentTarget.dataset.idx;
+  e.dataTransfer.setData('text/plain', idx);
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.classList.add('dragging');
+}
+function onMemberDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.esc-group-card.drag-over').forEach(el => el.classList.remove('drag-over'));
+}
+function onGroupDragOver(e) {
+  if (!canEdit()) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+function onGroupDragLeave(e) {
+  // só remove se realmente saiu do card (e.relatedTarget pode ainda ser filho)
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    e.currentTarget.classList.remove('drag-over');
+  }
+}
+function onGroupDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode mover colaboradores')) return;
+  const idx = parseInt(e.dataTransfer.getData('text/plain'));
+  if (isNaN(idx) || !allData[idx]) return;
+  const newGroup = e.currentTarget.dataset.group;       // 'A', 'B', 'C', ou 'S'
+  const newEscala = (newGroup === 'S') ? '' : newGroup;
+  const oldEscala = (allData[idx]['ESCALA']||'').trim().toUpperCase();
+  if (newEscala === oldEscala) return;
+
+  allData[idx]['ESCALA'] = newEscala;
+  db.ref(`presenca/data/${idx}/ESCALA`).set(newEscala);
+  // Re-render local imediato (Firebase listener vai re-disparar tudo depois)
+  refreshEscala();
+  if (document.getElementById('view-colaboradores')?.classList.contains('active')) {
+    refreshColaboradores();
+  }
+  const nome = allData[idx]['COLABORADOR'] || '';
+  const dest = (newGroup === 'S') ? 'Sem escala' : 'Grupo ' + newGroup;
+  notify(`${nome} → ${dest}`);
 }
 
 function renderEscalaCalendar() {
