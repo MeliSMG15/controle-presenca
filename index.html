@@ -5,6 +5,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1368,6 +1369,22 @@ table.esc-cal td { position:relative; }
   </div>
 </div>
 
+<!-- QR CODE MODAL -->
+<div class="modal-overlay" id="modal-qr">
+  <div class="modal" style="width:380px;text-align:center">
+    <div class="modal-title">📱 QR Code do Colaborador</div>
+    <div style="padding:8px 0 16px">
+      <div id="qr-colab-name" style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px"></div>
+      <div id="qr-colab-ldap" style="font-family:'DM Mono',monospace;font-size:13px;color:var(--text2)"></div>
+    </div>
+    <div id="qr-target" style="display:flex;justify-content:center;background:white;padding:18px;border-radius:10px;margin-bottom:16px"></div>
+    <div class="modal-actions" style="justify-content:center">
+      <button class="btn btn-ghost" onclick="closeQrModal()">Fechar</button>
+      <button class="btn btn-primary" onclick="downloadQr()">⬇ Baixar PNG</button>
+    </div>
+  </div>
+</div>
+
 <!-- NOTIFICATION -->
 <div class="notification" id="notification"></div>
 
@@ -2351,7 +2368,9 @@ function refreshColaboradores() {
       if (c === 'COLABORADOR') return `<td><strong style="cursor:pointer;color:var(--accent2)" onclick="openEditModal(${globalIdx})">${v}</strong></td>`;
       return `<td>${v || '—'}</td>`;
     }).join('');
-    return `<tr>${cells}<td><button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="openEditModal(${globalIdx})">✏ Editar</button></td></tr>`;
+    const hasGroot = !!(r['ID GROOT']||'').trim();
+    const qrBtn = `<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;${hasGroot?'':'opacity:0.4;cursor:not-allowed'}" ${hasGroot?`onclick="openQrModal(${globalIdx})"`:'disabled title="Sem ID Groot cadastrado"'}>📱 QR</button>`;
+    return `<tr>${cells}<td style="white-space:nowrap"><button class="btn btn-ghost" style="padding:4px 10px;font-size:12px;margin-right:4px" onclick="openEditModal(${globalIdx})">✏ Editar</button>${qrBtn}</td></tr>`;
   }).join('');
 
   renderPagination('col-pagination', rows.length, colPerPg, colPg, 'col');
@@ -2460,6 +2479,54 @@ function openEditModal(idx) {
 function closeEditModal() {
   document.getElementById('modal-edit').classList.remove('open');
   editingIndex = null;
+}
+
+// ── QR code do ID GROOT ──
+let qrCurrent = null;   // { groot, nome }
+function openQrModal(idx) {
+  const r = allData[idx];
+  if (!r) return;
+  const groot = (r['ID GROOT']||'').trim();
+  if (!groot) { notify('Colaborador sem ID Groot cadastrado', 'error'); return; }
+  qrCurrent = { groot, nome: r['COLABORADOR']||'' };
+
+  document.getElementById('qr-colab-name').textContent = qrCurrent.nome;
+  document.getElementById('qr-colab-ldap').textContent = 'ID Groot: ' + groot;
+
+  const host = document.getElementById('qr-target');
+  host.innerHTML = '';
+  if (typeof QRCode === 'undefined') { notify('Lib QRCode não carregou', 'error'); return; }
+  new QRCode(host, {
+    text: groot,
+    width: 240,
+    height: 240,
+    colorDark: '#2D3277',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.H
+  });
+  document.getElementById('modal-qr').classList.add('open');
+}
+function closeQrModal() {
+  document.getElementById('modal-qr').classList.remove('open');
+  document.getElementById('qr-target').innerHTML = '';
+  qrCurrent = null;
+}
+function downloadQr() {
+  if (!qrCurrent) return;
+  const host = document.getElementById('qr-target');
+  const canvas = host.querySelector('canvas');
+  const img    = host.querySelector('img');
+  let dataUrl;
+  if (canvas) dataUrl = canvas.toDataURL('image/png');
+  else if (img && img.src) dataUrl = img.src;
+  else { notify('Não consegui capturar o QR', 'error'); return; }
+  const safeGroot = qrCurrent.groot.replace(/[^a-z0-9_.-]/gi, '_');
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = `qr_groot_${safeGroot}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function saveEditColaborador() {
