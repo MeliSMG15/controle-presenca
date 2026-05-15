@@ -177,6 +177,27 @@ body {
   gap: 4px;
 }
 
+/* Modo somente-leitura — banner amarelo + bloqueio visual de controles */
+#readonly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 230, 0, 0.10);
+  border-bottom: 1px solid rgba(255, 230, 0, 0.35);
+  color: var(--meli);
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  font-weight: 500;
+}
+body.read-only .att-select,
+body.read-only .att-select:hover { opacity: 0.7; cursor: not-allowed; }
+body.read-only #btn-add-colab,
+body.read-only .btn-primary { opacity: 0.55; cursor: not-allowed; filter: grayscale(40%); }
+body.read-only table.esc-cal td.esc-t,
+body.read-only table.esc-cal td.esc-dsr { cursor: not-allowed; }
+
 .tab-btn {
   padding: 6px 16px;
   border: 1px solid transparent;
@@ -882,6 +903,10 @@ table.esc-cal td { position:relative; }
   </div>
 </div>
 
+<div id="readonly-banner" style="display:none">
+  👁 Modo somente-leitura — faça login com email @mercadolivre.com pra editar
+</div>
+
 <div class="main-container">
 
   <!-- DASHBOARD VIEW -->
@@ -1475,12 +1500,29 @@ function isAuthed() {
   return !!currentUser;
 }
 
+// Só usuários com email do domínio ML podem editar — o resto fica em modo leitura
+function canEdit() {
+  if (!currentUser) return false;
+  const email = (currentUser.email || '').toLowerCase();
+  return email.endsWith('@' + ALLOWED_DOMAIN);
+}
+
+// Helper genérico — bloqueia ação se não puder editar
+function guardEdit(msg) {
+  if (canEdit()) return true;
+  notify(msg || 'Modo somente-leitura — faça login com email @' + ALLOWED_DOMAIN + ' pra editar', 'error');
+  return false;
+}
+
 function signInEmailLink() {
-  const email = (prompt(`Digite seu email @${ALLOWED_DOMAIN}:`) || '').trim().toLowerCase();
+  const email = (prompt(`Digite seu email (use @${ALLOWED_DOMAIN} pra ter permissão de editar):`) || '').trim().toLowerCase();
   if (!email) return;
-  if (!email.endsWith('@' + ALLOWED_DOMAIN)) {
-    notify(`Apenas emails @${ALLOWED_DOMAIN} são permitidos`, 'error');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    notify('Email inválido', 'error');
     return;
+  }
+  if (!email.endsWith('@' + ALLOWED_DOMAIN)) {
+    if (!confirm(`O email ${email} não é do domínio @${ALLOWED_DOMAIN}.\n\nVocê pode entrar mesmo assim, mas só poderá VISUALIZAR — não conseguirá registrar presença nem alterar dados.\n\nContinuar?`)) return;
   }
   const actionCodeSettings = {
     url: window.location.origin + window.location.pathname,
@@ -1526,20 +1568,27 @@ function signOutGoogle() {
 }
 
 function onAuthChanged(user) {
+  currentUser = user;
   if (user) {
     const email = (user.email || '').toLowerCase();
     if (!email.endsWith('@' + ALLOWED_DOMAIN)) {
-      notify(`Apenas contas @${ALLOWED_DOMAIN} são permitidas`, 'error');
-      firebase.auth().signOut();
-      return;
+      notify(`Logado como ${email} — modo somente-leitura (apenas @${ALLOWED_DOMAIN} pode editar)`, 'error');
     }
   }
-  currentUser = user;
   renderAuthUI();
-  // Re-render presença pra mostrar/esconder tooltips
+  applyReadOnlyMode();
+  // Re-render presença pra atualizar tooltips e estado dos selects
   if (document.getElementById('view-presenca')?.classList.contains('active')) {
     refreshPresenca();
   }
+}
+
+// Aplica um indicador visual de read-only e desabilita controles de edição
+function applyReadOnlyMode() {
+  const readOnly = !canEdit();
+  document.body.classList.toggle('read-only', readOnly);
+  const banner = document.getElementById('readonly-banner');
+  if (banner) banner.style.display = readOnly ? 'flex' : 'none';
 }
 
 function renderAuthUI() {
@@ -2115,9 +2164,8 @@ function refreshPresenca() {
 }
 
 function updateAtt(sel) {
-  if (!isAuthed()) {
-    notify('Faça login com Google pra registrar presença', 'error');
-    // Reverte o select pro valor antigo
+  if (!canEdit()) {
+    guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode registrar presença');
     const idx0 = parseInt(sel.dataset.idx);
     const date0 = sel.dataset.date;
     const prev = (allData[idx0]?.attendance || {})[date0] || '';
@@ -2293,6 +2341,7 @@ function closeAddColaborador() {
   document.getElementById('modal-add').classList.remove('open');
 }
 function addColaborador() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode adicionar colaboradores')) return;
   const nome = document.getElementById('new-nome').value.trim();
   if (!nome) { notify('Nome é obrigatório!', 'error'); return; }
   const newRow = {
@@ -2375,6 +2424,7 @@ function closeEditModal() {
 }
 
 function saveEditColaborador() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode editar colaboradores')) return;
   if (editingIndex === null) return;
   const r = allData[editingIndex];
   const fields = ['COLABORADOR','EMPRESA','STATUS','ESCALA','CICLO','CARGO','LÍDER','ROTA',
@@ -2394,6 +2444,7 @@ function saveEditColaborador() {
 }
 
 function deleteColaborador() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode remover colaboradores')) return;
   if (editingIndex === null) return;
   const nome = allData[editingIndex]['COLABORADOR'];
   if (!confirm(`Remover "${nome}"? Esta ação não pode ser desfeita.`)) return;
@@ -2784,6 +2835,7 @@ function getEscalaDay(group, isoDate) {
 
 // Clica na célula → alterna T ↔ DSR e persiste no Firebase
 function toggleEscalaCell(group, isoDate) {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode ajustar a escala')) return;
   const cur = getEscalaDay(group, isoDate);
   const nxt = (cur === 'DSR') ? 'T' : 'DSR';
   const def = getDefaultEscalaDay(group, isoDate);
@@ -2800,6 +2852,7 @@ function toggleEscalaCell(group, isoDate) {
 
 // Resetar todos os overrides do mês visível
 function resetEscalaOverridesMonth() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode resetar a escala')) return;
   if (!escalaMonth) return;
   const ym = escalaMonth.slice(0, 7);   // "YYYY-MM"
   const keysToRemove = Object.keys(escalaOverrides).filter(k => k.startsWith(ym));
@@ -2979,6 +3032,7 @@ function init() {
   document.getElementById('col-status').value = 'ATIVO';
   document.getElementById('loading-overlay').classList.add('show');
   renderAuthUI();
+  applyReadOnlyMode();
   completeEmailLinkSignIn();
   firebase.auth().onAuthStateChanged(onAuthChanged);
   initEmailJS();
