@@ -841,25 +841,10 @@ table.esc-cal td { position:relative; }
 
     <div class="table-wrap">
       <div class="table-header">
-        <span class="table-title">Detalhamento do Dia</span>
-        <span class="table-count" id="day-detail-count">0 colaboradores</span>
+        <span class="table-title">📋 Ausências</span>
+        <span class="table-count" id="dash-ausencias-summary">0 ausências</span>
       </div>
-      <div class="table-scroll">
-        <table id="day-detail-table">
-          <thead>
-            <tr>
-              <th onclick="sortDayTable('COLABORADOR')">Colaborador ↕</th>
-              <th onclick="sortDayTable('EMPRESA')">Time ↕</th>
-              <th onclick="sortDayTable('STATUS')">Status ↕</th>
-              <th onclick="sortDayTable('LÍDER')">Líder ↕</th>
-              <th onclick="sortDayTable('CARGO')">Cargo ↕</th>
-              <th onclick="sortDayTable('CICLO')">Ciclo ↕</th>
-              <th id="day-detail-presenca-th">Presença</th>
-            </tr>
-          </thead>
-          <tbody id="day-detail-body"></tbody>
-        </table>
-      </div>
+      <div id="dash-ausencias-host" style="padding:18px 20px"></div>
     </div>
   </div>
 
@@ -1602,66 +1587,109 @@ function refreshDashboard() {
   // Ranking de Faltas Injustificadas no ano corrente
   renderFaltasInjustificadasRanking(filtered);
 
-  // Header da última coluna
-  const thPres = document.getElementById('day-detail-presenca-th');
-  if (thPres) thPres.textContent = isRange ? 'Presença (intervalo)' : 'Presença';
-
-  // Detail table
-  let rows = filtered;
-  if (daySort.col) {
-    rows = [...rows].sort((a,b) => {
-      let va = a[daySort.col] || '';
-      let vb = b[daySort.col] || '';
-      if (daySort.col === 'PRESENÇA') {
-        if (isRange) { va = (perColab.get(a)||{}).p||0; vb = (perColab.get(b)||{}).p||0; return (va-vb) * daySort.dir; }
-        va = hasDate ? getEffectiveAtt(a, dates[0]) : ''; vb = hasDate ? getEffectiveAtt(b, dates[0]) : '';
-      }
-      return va.toString().localeCompare(vb.toString()) * daySort.dir;
-    });
-  }
-
-  document.getElementById('day-detail-count').textContent = `${rows.length} colaboradores`;
-  const tbody = document.getElementById('day-detail-body');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">🔍</div>Nenhum resultado</div></td></tr>';
-    return;
-  }
-  tbody.innerHTML = rows.map(r => {
-    let presCell;
-    if (!hasDate) {
-      presCell = '<span style="color:var(--text3);font-size:12px">Selecione data</span>';
-    } else if (isRange) {
-      const c = perColab.get(r) || {p:0,fj:0,fi:0,fd:0,fe:0,bh:0,inss:0};
-      const parts = [];
-      if (c.p)    parts.push(`<span style="color:#34d399">${c.p}P</span>`);
-      if (c.fj)   parts.push(`<span style="color:var(--yellow)">${c.fj}FJ</span>`);
-      if (c.fi)   parts.push(`<span style="color:#f87171">${c.fi}FI</span>`);
-      if (c.fd)   parts.push(`<span style="color:#c084fc">${c.fd}FD</span>`);
-      if (c.fe)   parts.push(`<span style="color:#22d3ee">${c.fe}FE</span>`);
-      if (c.bh)   parts.push(`<span style="color:#fb923c">${c.bh}BH</span>`);
-      if (c.inss) parts.push(`<span style="color:#94a3b8">${c.inss}INSS</span>`);
-      presCell = parts.length
-        ? `<span style="font-family:'DM Mono',monospace;font-size:12px;display:inline-flex;gap:8px;flex-wrap:wrap">${parts.join('')}</span>`
-        : '<span style="color:var(--text3);font-size:12px">—</span>';
-    } else {
-      presCell = attBadge(getEffectiveAtt(r, dates[0]));
-    }
-    return `<tr>
-      <td><strong>${r['COLABORADOR'] || ''}</strong></td>
-      <td>${teamBadge(r)}</td>
-      <td>${statusBadge(r)}</td>
-      <td>${r['LÍDER'] || '—'}</td>
-      <td>${r['CARGO'] || '—'}</td>
-      <td>${r['CICLO'] || '—'}</td>
-      <td>${presCell}</td>
-    </tr>`;
-  }).join('');
+  // Resumo de ausências (substitui o antigo Detalhamento do Dia)
+  renderAusencias(filtered, dates);
 }
 
 function sortDayTable(col) {
-  if (daySort.col === col) daySort.dir *= -1;
-  else { daySort.col = col; daySort.dir = 1; }
-  refreshDashboard();
+  // mantido para compatibilidade (não usado mais — a tabela do dia foi removida)
+}
+
+// Resumo de ausências do dia/intervalo selecionado
+// — agrupado por tipo (Justificada / Injustificada) e por time (MELI / PART TIME / TEMP)
+// — com % sobre HC ativos
+function renderAusencias(filtered, dates) {
+  const host = document.getElementById('dash-ausencias-host');
+  const summaryEl = document.getElementById('dash-ausencias-summary');
+  if (!host) return;
+
+  if (!dates || !dates.length) {
+    host.innerHTML = '<div style="color:var(--text3);text-align:center;padding:20px">Selecione uma data</div>';
+    if (summaryEl) summaryEl.textContent = '—';
+    return;
+  }
+
+  // HC ativos = filtered restrito a STATUS=ATIVO (caso o filtro de status esteja em "Todos")
+  const activeHC = filtered.filter(r => isActive(r)).length;
+
+  // Coleta ausências (uma entrada por colaborador × data)
+  const just = [];
+  const inj  = [];
+  dates.forEach(d => {
+    filtered.forEach(r => {
+      const av = getEffectiveAtt(r, d).toUpperCase();
+      if (av === 'JUSTIFICADA') just.push({ row:r, date:d });
+      else if (av === 'INJUSTIFICADA') inj.push({ row:r, date:d });
+    });
+  });
+
+  const totalAbs = just.length + inj.length;
+  const denom    = activeHC * dates.length;
+  const pct      = denom > 0 ? (totalAbs / denom * 100).toFixed(1) : '0';
+  const isRange  = dates.length > 1;
+
+  if (summaryEl) {
+    summaryEl.textContent = isRange
+      ? `${totalAbs} ausência(s) — ${pct}% (${activeHC} HC × ${dates.length} dias)`
+      : `${totalAbs} ausência(s) — ${pct}% de ${activeHC} HC ativos`;
+  }
+
+  if (totalAbs === 0) {
+    host.innerHTML = `
+      <div style="font-size:22px;font-weight:700;margin-bottom:6px">0 Ausências</div>
+      <div style="color:#34d399;font-size:14px">✓ Nenhuma falta no período</div>`;
+    return;
+  }
+
+  function groupByTeam(arr) {
+    const groups = { 'MELI':[], 'PART TIME':[], 'TEMP':[] };
+    arr.forEach(x => {
+      if (isMeli(x.row)) groups['MELI'].push(x);
+      else if (isPartTime(x.row)) groups['PART TIME'].push(x);
+      else groups['TEMP'].push(x);
+    });
+    Object.keys(groups).forEach(k => groups[k].sort((a,b) =>
+      (a.row['COLABORADOR']||'').localeCompare(b.row['COLABORADOR']||'')));
+    return groups;
+  }
+
+  const pad2 = n => String(n).padStart(2,'0');
+
+  function renderTeamBlock(team, arr) {
+    if (!arr.length) return '';
+    const items = arr.map(x => {
+      const nome  = (x.row['COLABORADOR']||'').toUpperCase();
+      const lider = (x.row['LÍDER']||'—').toUpperCase();
+      const dateStr = isRange ? ` <span style="color:var(--text3)">[${formatDate(x.date)}]</span>` : '';
+      return `<div>${nome} - ${lider}${dateStr}</div>`;
+    }).join('');
+    return `
+      <div style="margin-top:10px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:4px">${pad2(arr.length)} ${team}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:12px;line-height:1.65;color:var(--text2)">${items}</div>
+      </div>`;
+  }
+
+  function renderSection(label, items, color) {
+    if (!items.length) return '';
+    const g = groupByTeam(items);
+    return `
+      <div style="margin-top:20px">
+        <div style="font-weight:700;color:${color};margin-bottom:6px">- ${pad2(items.length)} ${label}</div>
+        ${renderTeamBlock('MELI', g['MELI'])}
+        ${renderTeamBlock('PART TIME', g['PART TIME'])}
+        ${renderTeamBlock('TEMP', g['TEMP'])}
+      </div>`;
+  }
+
+  host.innerHTML = `
+    <div style="font-size:22px;font-weight:700">${totalAbs} Ausências</div>
+    <div style="font-size:13px;color:var(--text2);margin-top:2px">
+      ${pct}% sobre ${activeHC} HC ativos${isRange ? ` × ${dates.length} dia(s)` : ''}
+    </div>
+    ${renderSection('JUSTIFICADA',     just, 'var(--yellow)')}
+    ${renderSection('INJUSTIFICADAS',  inj,  '#f87171')}
+  `;
 }
 
 // Ranking de faltas injustificadas no ano corrente
