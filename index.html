@@ -1802,37 +1802,48 @@ function dateRangeList(from, to) {
   return out;
 }
 
-// ── Semana ISO (Mon-Sun) helpers ──
-function getISOWeek(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return { week: Math.ceil((((d - yearStart) / 86400000) + 1) / 7), year: d.getUTCFullYear() };
+// ── Semana Domingo–Sábado helpers ──
+// W1 = semana que contém 01/jan (a partir do domingo daquela semana)
+function _toISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
 }
-function getDatesOfISOWeek(year, week) {
-  // 4 de janeiro sempre está na semana 1 ISO
-  const jan4 = new Date(year, 0, 4);
-  const day = jan4.getDay() || 7;
-  const mondayW1 = new Date(year, 0, 4 - (day - 1));
-  const mondayWN = new Date(mondayW1);
-  mondayWN.setDate(mondayW1.getDate() + (week - 1) * 7);
-  const sundayWN = new Date(mondayWN);
-  sundayWN.setDate(mondayWN.getDate() + 6);
-  return { from: mondayWN.toISOString().slice(0,10), to: sundayWN.toISOString().slice(0,10) };
+function getWeekOfYear(date) {
+  const year = date.getFullYear();
+  const jan1 = new Date(year, 0, 1);
+  // Domingo da semana que contém 01/jan
+  const firstSun = new Date(jan1);
+  firstSun.setDate(jan1.getDate() - jan1.getDay()); // getDay(): 0=Dom..6=Sáb
+  // Diferença em dias entre date e firstSun
+  const dateMid    = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const firstSunMid = new Date(firstSun.getFullYear(), firstSun.getMonth(), firstSun.getDate());
+  const days = Math.floor((dateMid - firstSunMid) / 86400000);
+  return { week: Math.floor(days / 7) + 1, year };
+}
+function getDatesOfWeek(year, week) {
+  const jan1 = new Date(year, 0, 1);
+  const firstSun = new Date(jan1);
+  firstSun.setDate(jan1.getDate() - jan1.getDay());
+  const sun = new Date(firstSun);
+  sun.setDate(firstSun.getDate() + (week - 1) * 7);
+  const sat = new Date(sun);
+  sat.setDate(sun.getDate() + 6);
+  return { from: _toISO(sun), to: _toISO(sat) };
 }
 function populateWeekSelect() {
   const sel = document.getElementById('dash-week');
   if (!sel) return;
   const now = new Date();
   const year = now.getFullYear();
-  const cur = getISOWeek(now);
-  // Quantas semanas tem o ano (52 ou 53 — calcula via 31/12)
-  const last = getISOWeek(new Date(year, 11, 31)).week;
-  const totalWeeks = last === 1 ? 52 : last;   // se 31/12 cair na W1 do próximo ano, o ano teve 52
+  const cur = getWeekOfYear(now);
+  // Quantas semanas tem o ano (53 se 31/dez cair na W53)
+  const last = getWeekOfYear(new Date(year, 11, 31)).week;
+  const totalWeeks = last;
   const opts = ['<option value="">— manual —</option>'];
   for (let w = 1; w <= totalWeeks; w++) {
-    const { from, to } = getDatesOfISOWeek(year, w);
+    const { from, to } = getDatesOfWeek(year, w);
     const fromBR = formatDate(from).slice(0,5);
     const toBR   = formatDate(to).slice(0,5);
     const sel2   = (cur.year === year && cur.week === w) ? ' selected' : '';
@@ -1842,9 +1853,9 @@ function populateWeekSelect() {
 }
 function onDashWeekChange(sel) {
   const w = parseInt(sel.value);
-  if (!w) return;   // "manual" — não mexe nas datas
+  if (!w) return;
   const year = new Date().getFullYear();
-  const { from, to } = getDatesOfISOWeek(year, w);
+  const { from, to } = getDatesOfWeek(year, w);
   document.getElementById('dash-date-from').value = from;
   document.getElementById('dash-date-to').value   = to;
   refreshDashboard();
@@ -1868,8 +1879,8 @@ function syncWeekSelect() {
   const t = document.getElementById('dash-date-to').value;
   if (!f || !t) { sel.value = ''; return; }
   const fDate = new Date(f + 'T12:00:00');
-  const { week, year } = getISOWeek(fDate);
-  const expected = getDatesOfISOWeek(year, week);
+  const { week, year } = getWeekOfYear(fDate);
+  const expected = getDatesOfWeek(year, week);
   if (expected.from === f && expected.to === t && year === new Date().getFullYear()) {
     sel.value = String(week);
   } else {
