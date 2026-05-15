@@ -8,29 +8,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Registro de Presença</title>
+<title>Registro de Presença · MELI SMG15</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='8' fill='%23FFE600'/%3E%3Cpath d='M6 24 Q10 14 15 19 Q19 24 22 20 Q25 16 29 20 Q34 24 38 16' stroke='%232D3277' stroke-width='3.5' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #0a0e1a;
-  --surface: #111827;
-  --surface2: #1a2235;
-  --surface3: #1f2d47;
-  --border: #2a3a55;
-  --border2: #3a4f70;
+  --bg: #0a1124;
+  --surface: #131b33;
+  --surface2: #1c2645;
+  --surface3: #243056;
+  --border: #2c3a60;
+  --border2: #3d4f7b;
   --text: #e8edf5;
-  --text2: #8fa3c0;
-  --text3: #5a7090;
-  --accent: #3b82f6;
-  --accent2: #60a5fa;
-  --green: #10b981;
+  --text2: #95a8c8;
+  --text3: #6779a0;
+  --accent: #3483FA;       /* ML action blue */
+  --accent2: #4a93ff;
+  --green: #00a650;        /* ML success green */
   --red: #ef4444;
   --yellow: #f59e0b;
   --purple: #8b5cf6;
   --orange: #f97316;
   --cyan: #06b6d4;
-  --meli: #ffe600;
+  --meli: #FFE600;         /* ML yellow */
   --meli-dark: #cc9a00;
+  --meli-blue: #2D3277;    /* ML deep blue */
   --temp: #a855f7;
 }
 
@@ -47,6 +49,7 @@ body {
 .topbar {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  border-top: 3px solid var(--meli);
   padding: 0 24px;
   display: flex;
   align-items: center;
@@ -64,15 +67,16 @@ body {
 }
 
 .brand-icon {
-  width: 34px;
-  height: 34px;
-  background: linear-gradient(135deg, var(--accent), var(--cyan));
-  border-radius: 8px;
+  width: 42px;
+  height: 30px;
+  background: var(--meli);
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(255, 230, 0, 0.18);
 }
+.brand-icon svg { display: block; }
 
 .brand-name {
   font-weight: 700;
@@ -189,6 +193,17 @@ body {
   background: var(--surface2);
   border-color: var(--border2);
   color: var(--text);
+  position: relative;
+}
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--meli);
+  border-radius: 2px;
 }
 .tab-btn:hover:not(.active) { color: var(--text); background: var(--surface2); }
 
@@ -832,10 +847,16 @@ table.esc-cal td { position:relative; }
 
 <div class="topbar">
   <div class="topbar-brand">
-    <div class="brand-icon">📋</div>
+    <div class="brand-icon" title="Mercado Livre">
+      <svg viewBox="0 0 40 28" width="34" height="22" xmlns="http://www.w3.org/2000/svg" aria-label="ML">
+        <path d="M4 18 Q8 8 13 13 Q17 18 20 14 Q23 10 27 14 Q32 18 36 10" stroke="#2D3277" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="10" cy="12" r="1.6" fill="#2D3277"/>
+        <circle cx="30" cy="12" r="1.6" fill="#2D3277"/>
+      </svg>
+    </div>
     <div>
       <div class="brand-name">Registro de Presença</div>
-      <div class="brand-sub">Sistema de Controle</div>
+      <div class="brand-sub">Sistema de Controle · SMG15</div>
     </div>
   </div>
   <div class="tabs">
