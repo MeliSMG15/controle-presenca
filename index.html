@@ -853,6 +853,10 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes adm-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
 
 /* ── Faltas breakdown (Dashboard) ── */
 .falta-breakdown { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; padding:14px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
@@ -924,7 +928,7 @@ table.esc-cal td { position:relative; }
     </div>
   </div>
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+    <button class="tab-btn active" id="tab-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
     <button class="tab-btn" onclick="switchTab('presenca')">✅ Presença</button>
     <button class="tab-btn" onclick="switchTab('colaboradores')">👥 Colaboradores</button>
     <button class="tab-btn" onclick="switchTab('escala')">📆 Escala</button>
@@ -942,6 +946,10 @@ table.esc-cal td { position:relative; }
         <button class="topbar-btn topbar-btn-ghost" onclick="signOutGoogle()" title="Sair">Sair</button>
       </div>
     </div>
+    <button id="btn-admin-online" class="topbar-btn" onclick="openOnlinePanel()" title="Ver quem está online (admin)" style="display:none;gap:6px;align-items:center;border-color:rgba(0,166,80,0.4);color:#34d399">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;animation:adm-pulse 2s infinite"></span>
+      <span>Online: <span id="online-count">0</span></span>
+    </button>
     <div class="topbar-date" id="topbar-date"></div>
   </div>
 </div>
@@ -1122,7 +1130,7 @@ table.esc-cal td { position:relative; }
       <div class="table-header">
         <div style="display:flex;align-items:center;gap:12px">
           <span class="table-title">Registro do Dia</span>
-          <button class="btn btn-ghost" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px" onclick="openMdModal()">⚠ Aplicar MD</button>
+          <button class="btn btn-ghost" id="btn-aplicar-md" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="openMdModal()">⚠ Aplicar MD</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="pres-count">0 colaboradores</span>
@@ -1387,6 +1395,19 @@ table.esc-cal td { position:relative; }
   </div>
 </div>
 
+<!-- ADMIN: USUÁRIOS ONLINE -->
+<div class="modal-overlay" id="modal-online">
+  <div class="modal" style="width:560px">
+    <div class="modal-title">👁 Usuários Online</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Visível só pra <span style="color:var(--meli)">acre.gomes@mercadolivre.com</span>. Atualiza em tempo real.</div>
+    <div id="online-list" style="max-height:420px;overflow:auto"></div>
+    <div class="modal-actions">
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="closeOnlinePanel()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MEDIDA DISCIPLINAR MODAL -->
 <div class="modal-overlay" id="modal-md">
   <div class="modal" style="width:680px">
@@ -1510,7 +1531,10 @@ const LEADER_EMAILS = {
   'GUILHERME': 'guilherme.mrodrigue@mercadolivre.com',
   'LEANDRO':   'leandro.bsiqueira@mercadolivre.com',
   'NATHALIA':  'nathalia.hsantos@mercadolivre.com',
-  'VICTOR':    'victor.lobato@mercadolivre.com'
+  'VICTOR':    'victor.lobato@mercadolivre.com',
+  'STEFANI':   'stefaninun.santos@mercadolivre.com',
+  'STEFANINUN':'stefaninun.santos@mercadolivre.com',
+  'LUCAS':     'lucas.mbastos@mercadolivre.com'
 };
 const SUPERVISOR_EMAIL = 'celso.neves@mercadolivre.com';
 const SUPERVISOR_NAME  = 'Celso';
@@ -1631,6 +1655,36 @@ let auditLog = {};       // chave: `${idx}_${date}` → { val, by, at }
 let currentUser = null;  // objeto Firebase user logado
 
 const ALLOWED_DOMAIN = 'mercadolivre.com';
+const ADMIN_EMAIL    = 'acre.gomes@mercadolivre.com';
+
+// Quem pode ver a aba Dashboard: líderes + supervisor + admin
+function getDashboardAllowedEmails() {
+  const emails = new Set();
+  emails.add(ADMIN_EMAIL.toLowerCase());
+  // Supervisor (definido em SUPERVISOR_EMAIL, mas pode ainda não ter sido inicializado aqui — fallback)
+  emails.add('celso.neves@mercadolivre.com');
+  // Líderes — replicado de LEADER_EMAILS pra evitar ordem de declaração
+  ['carlos.apereira@mercadolivre.com',
+   'guilherme.mrodrigue@mercadolivre.com',
+   'leandro.bsiqueira@mercadolivre.com',
+   'nathalia.hsantos@mercadolivre.com',
+   'victor.lobato@mercadolivre.com',
+   'stefaninun.santos@mercadolivre.com',
+   'lucas.mbastos@mercadolivre.com'
+  ].forEach(e => emails.add(e));
+  return emails;
+}
+const DASHBOARD_EMAILS = getDashboardAllowedEmails();
+
+function isAdmin() {
+  if (!currentUser) return false;
+  return (currentUser.email || '').toLowerCase() === ADMIN_EMAIL.toLowerCase();
+}
+
+function canSeeDashboard() {
+  if (!currentUser) return false;
+  return DASHBOARD_EMAILS.has((currentUser.email || '').toLowerCase());
+}
 
 function getCurrentEditor() {
   if (!currentUser) return '';
@@ -1724,10 +1778,136 @@ function onAuthChanged(user) {
   }
   renderAuthUI();
   applyReadOnlyMode();
+  applyDashboardVisibility();
+  setupPresence(user);
+  toggleAdminUI();
   // Re-render presença pra atualizar tooltips e estado dos selects
   if (document.getElementById('view-presenca')?.classList.contains('active')) {
     refreshPresenca();
   }
+}
+
+// Mostra/esconde aba Dashboard + botão "Aplicar MD" conforme permissão
+function applyDashboardVisibility() {
+  const tab  = document.getElementById('tab-dashboard');
+  const view = document.getElementById('view-dashboard');
+  const mdBtn = document.getElementById('btn-aplicar-md');
+  const allowed = canSeeDashboard();
+  if (tab) {
+    if (allowed) {
+      tab.style.display = '';
+    } else {
+      tab.style.display = 'none';
+      // Se atualmente estiver no Dashboard, redireciona pra Presença
+      if (view && view.classList.contains('active')) switchTab('presenca');
+    }
+  }
+  if (mdBtn) mdBtn.style.display = allowed ? '' : 'none';
+}
+
+// ── Presença em tempo real (quem está online) ──
+let presenceRef = null;
+let onlineUsers = {};
+let onlineListenerAttached = false;
+
+function setupPresence(user) {
+  // Limpa registro anterior (logout / troca de usuário)
+  if (presenceRef) {
+    try { presenceRef.onDisconnect().cancel(); } catch(e) {}
+    presenceRef.remove();
+    presenceRef = null;
+  }
+  if (!user) return;
+  const uid = user.uid;
+  presenceRef = db.ref(`presenca/online/${uid}`);
+  // Quando o cliente conectar, registra a presença; e configura remoção on-disconnect
+  db.ref('.info/connected').on('value', snap => {
+    if (snap.val() === true && presenceRef) {
+      presenceRef.onDisconnect().remove();
+      presenceRef.set({
+        email: user.email || null,
+        name:  user.displayName || null,
+        at:    firebase.database.ServerValue.TIMESTAMP,
+        ua:    (navigator.userAgent || '').slice(0, 140)
+      });
+    }
+  });
+}
+
+function toggleAdminUI() {
+  const btn = document.getElementById('btn-admin-online');
+  if (!btn) return;
+  if (isAdmin()) {
+    btn.style.display = 'inline-flex';
+    if (!onlineListenerAttached) attachOnlineListener();
+  } else {
+    btn.style.display = 'none';
+    closeOnlinePanel();
+  }
+}
+
+function attachOnlineListener() {
+  onlineListenerAttached = true;
+  db.ref('presenca/online').on('value', snap => {
+    onlineUsers = snap.val() || {};
+    const countEl = document.getElementById('online-count');
+    if (countEl) countEl.textContent = Object.keys(onlineUsers).length;
+    renderOnlinePanel();
+  });
+}
+
+function openOnlinePanel() {
+  if (!isAdmin()) return;
+  document.getElementById('modal-online').classList.add('open');
+  renderOnlinePanel();
+}
+function closeOnlinePanel() {
+  const m = document.getElementById('modal-online');
+  if (m) m.classList.remove('open');
+}
+
+function deviceFromUA(ua) {
+  ua = (ua || '').toLowerCase();
+  if (ua.includes('iphone'))   return '📱 iPhone';
+  if (ua.includes('android'))  return '📱 Android';
+  if (ua.includes('ipad'))     return '📱 iPad';
+  if (ua.includes('macintosh'))return '💻 Mac';
+  if (ua.includes('windows'))  return '💻 Windows';
+  if (ua.includes('linux'))    return '💻 Linux';
+  return '🌐 Desktop';
+}
+
+function renderOnlinePanel() {
+  const host = document.getElementById('online-list');
+  if (!host) return;
+  const entries = Object.entries(onlineUsers);
+  if (!entries.length) {
+    host.innerHTML = '<div style="color:var(--text3);text-align:center;padding:24px">Ninguém online no momento</div>';
+    return;
+  }
+  // Mais recente conexão primeiro
+  entries.sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
+  host.innerHTML = entries.map(([uid, u]) => {
+    const isMe   = currentUser && currentUser.uid === uid;
+    const name   = u.name || (u.email||'').split('@')[0] || '(anônimo)';
+    const email  = u.email || '—';
+    const since  = u.at ? formatAuditDate(u.at) : '—';
+    const device = deviceFromUA(u.ua);
+    const youTag = isMe ? `<span style="font-size:10px;background:var(--meli);color:#2D3277;padding:2px 6px;border-radius:6px;font-weight:700;margin-left:6px">VOCÊ</span>` : '';
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px">
+        <div style="width:10px;height:10px;border-radius:50%;background:#10b981;flex-shrink:0;animation:adm-pulse 2s infinite"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:var(--text)">${name}${youTag}</div>
+          <div style="font-size:12px;color:var(--text2);font-family:'DM Mono',monospace;text-overflow:ellipsis;overflow:hidden;white-space:nowrap">${email}</div>
+        </div>
+        <div style="text-align:right;font-size:11px;color:var(--text3);font-family:'DM Mono',monospace">
+          <div>${device}</div>
+          <div>desde ${since}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 // Aplica um indicador visual de read-only e desabilita controles de edição
@@ -3524,6 +3704,7 @@ function init() {
   document.getElementById('loading-overlay').classList.add('show');
   renderAuthUI();
   applyReadOnlyMode();
+  applyDashboardVisibility();
   completeEmailLinkSignIn();
   firebase.auth().onAuthStateChanged(onAuthChanged);
   initEmailJS();
