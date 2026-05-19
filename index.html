@@ -1699,10 +1699,23 @@ function getAtt(row, date) {
 function getEffectiveAtt(row, date) {
   const raw = getAtt(row, date);
   if (raw) return raw;
+  // Inativos não recebem default
+  if (!isActive(row)) return '';
+  // Antes da admissão ou depois do fim de contrato: sem default
+  const adm = (row['DATA ADMISSÃO']||'').split('T')[0];
+  const fim = (row['DATA FIM CONTRATO']||'').split('T')[0];
+  if (adm && date < adm) return '';
+  if (fim && date > fim) return '';
+  // Escala A/B/C com DSR planejado → FOLGA DSR (vale pra qualquer data, é planejamento)
   const grp = (row['ESCALA']||'').trim().toUpperCase();
-  if (!['A','B','C'].includes(grp)) return '';
-  if (typeof getEscalaDay !== 'function') return '';
-  return (getEscalaDay(grp, date) === 'DSR') ? 'FOLGA DSR' : '';
+  if (['A','B','C'].includes(grp) && typeof getEscalaDay === 'function') {
+    if (getEscalaDay(grp, date) === 'DSR') return 'FOLGA DSR';
+  }
+  // Part Time NÃO recebe default — líder marca manualmente
+  if (isPartTime(row)) return '';
+  // Default PRESENTE só pra HOJE em diante — datas passadas vazias ficam vazias
+  if (date < today()) return '';
+  return 'PRESENTE';
 }
 
 function attBadge(val) {
