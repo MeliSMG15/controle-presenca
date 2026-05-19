@@ -1292,6 +1292,12 @@ table.esc-cal td { position:relative; }
         </select>
       </div>
       <div class="filter-group">
+        <label>🔄 Ciclo</label>
+        <select id="esc-ciclo" onchange="refreshEscala()">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="filter-group">
         <label>🔎 Buscar</label>
         <input type="text" class="search-input" id="esc-search" placeholder="Nome..." oninput="refreshEscala()">
       </div>
@@ -2156,7 +2162,7 @@ function initFilters() {
   ['dash-lider','pres-lider','col-lider','new-lider'].forEach(id => {
     if (document.getElementById(id)) populateSelect(id, lideres, id !== 'new-lider');
   });
-  ['dash-ciclo','col-ciclo','pres-ciclo'].forEach(id => populateSelect(id, ciclos));
+  ['dash-ciclo','col-ciclo','pres-ciclo','esc-ciclo'].forEach(id => populateSelect(id, ciclos));
   ['dash-cargo','col-cargo'].forEach(id => populateSelect(id, cargos));
   // Empresas TEMP (todas as EMPRESAs distintas que não são MELI nem PART TIME)
   const tempEmpresas = [...new Set(
@@ -4749,10 +4755,11 @@ function escNavMonth(dir) {
 function refreshEscala() {
   if (!escalaMonth) escalaMonth = today().slice(0,7) + '-01';
   const team   = (document.getElementById('esc-team')   || {}).value || '';
+  const ciclo  = (document.getElementById('esc-ciclo')  || {}).value || '';
   const search = ((document.getElementById('esc-search')|| {}).value || '').trim().toLowerCase();
 
   // Escala mostra apenas ATIVOS — inativos não fazem sentido aqui
-  const filtered = getFilteredData(team, 'ATIVO', '', '', '').filter(r => {
+  const filtered = getFilteredData(team, 'ATIVO', '', ciclo, '').filter(r => {
     if (!search) return true;
     return ((r['COLABORADOR']||'').toLowerCase().includes(search)
          || (r['LDAP']||'').toLowerCase().includes(search));
