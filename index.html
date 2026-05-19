@@ -4759,41 +4759,90 @@ function refreshEscala() {
     { key:'C', label:'Grupo C' },
     { key:'S', label:'Sem escala' }
   ];
+
+  // Separa MELI/TEMP de Part Time
+  const meliTempRows = filtered.filter(r => !isPartTime(r));
+  const partTimeRows = filtered.filter(r => isPartTime(r));
+
   const byGroup = { A:[], B:[], C:[], S:[] };
-  filtered.forEach(r => {
+  meliTempRows.forEach(r => {
     const g = (r['ESCALA']||'').trim().toUpperCase();
     if (byGroup[g]) byGroup[g].push(r); else byGroup.S.push(r);
   });
 
   const editable = canEdit();
-  document.getElementById('esc-groups').innerHTML = groups.map(grp => {
-    const g = grp.key;
-    const members = byGroup[g].slice().sort((a,b) =>
+
+  function renderMemberCard(m) {
+    const idx = allData.indexOf(m);
+    return `<div class="esc-member" draggable="${editable?'true':'false'}" data-idx="${idx}"
+                 ondragstart="onMemberDragStart(event)" ondragend="onMemberDragEnd(event)">
+       <span>${m['COLABORADOR']||''}</span>
+       <small>${(m['EMPRESA']||'').trim() || '—'}</small>
+     </div>`;
+  }
+
+  function renderGroupCard(g, label, badgeChar, badgeClass) {
+    const members = (byGroup[g] || []).slice().sort((a,b) =>
       (a['COLABORADOR']||'').localeCompare(b['COLABORADOR']||''));
     const list = members.length
-      ? members.map(m => {
-          const idx = allData.indexOf(m);
-          return `<div class="esc-member" draggable="${editable?'true':'false'}" data-idx="${idx}"
-                       ondragstart="onMemberDragStart(event)" ondragend="onMemberDragEnd(event)">
-             <span>${m['COLABORADOR']||''}</span>
-             <small>${(m['EMPRESA']||'').trim() || '—'}</small>
-           </div>`;
-        }).join('')
+      ? members.map(renderMemberCard).join('')
       : '<div style="color:var(--text3);font-size:13px;padding:12px;text-align:center">Nenhum colaborador</div>';
-    const badgeChar = (g === 'S') ? '∅' : g;
     return `
       <div class="esc-group-card" data-group="${g}"
            ondragover="onGroupDragOver(event)" ondragleave="onGroupDragLeave(event)" ondrop="onGroupDrop(event)">
         <div class="esc-group-head">
           <div class="esc-group-title">
-            <div class="esc-group-badge ${g}">${badgeChar}</div>
-            ${grp.label}
+            <div class="esc-group-badge ${badgeClass}">${badgeChar}</div>
+            ${label}
+          </div>
+          <div class="esc-group-count">${members.length}</div>
+        </div>
+        <div class="esc-member-list">${list}</div>
+      </div>`;
+  }
+
+  // Bloco MELI/TEMP
+  const meliTempHtml = groups.map(grp => {
+    const g = grp.key;
+    return renderGroupCard(g, grp.label, (g === 'S' ? '∅' : g), g);
+  }).join('');
+
+  // Bloco Part Time — agrupa por ESCALA (DOM/SAB/SEG/SEX/etc) dinamicamente
+  const ptByEscala = {};
+  partTimeRows.forEach(r => {
+    const k = (r['ESCALA']||'—').trim().toUpperCase() || '—';
+    if (!ptByEscala[k]) ptByEscala[k] = [];
+    ptByEscala[k].push(r);
+  });
+  const ptKeys = Object.keys(ptByEscala).sort();
+  const ptHtml = ptKeys.map(k => {
+    const members = ptByEscala[k].slice().sort((a,b) =>
+      (a['COLABORADOR']||'').localeCompare(b['COLABORADOR']||''));
+    const list = members.length
+      ? members.map(renderMemberCard).join('')
+      : '<div style="color:var(--text3);font-size:13px;padding:12px;text-align:center">Nenhum colaborador</div>';
+    const label = (k === '—') ? 'Sem escala' : `Grupo ${k}`;
+    return `
+      <div class="esc-group-card" data-group="PT_${k}">
+        <div class="esc-group-head">
+          <div class="esc-group-title">
+            <div class="esc-group-badge PT">${k === '—' ? '∅' : k.slice(0,3)}</div>
+            ${label}
           </div>
           <div class="esc-group-count">${members.length}</div>
         </div>
         <div class="esc-member-list">${list}</div>
       </div>`;
   }).join('');
+
+  document.getElementById('esc-groups').innerHTML = `
+    <div class="esc-section-title">MELI · Temporário</div>
+    <div class="esc-groups-row-inner">${meliTempHtml}</div>
+    ${partTimeRows.length ? `
+      <div class="esc-section-title pt">Part Time</div>
+      <div class="esc-groups-row-inner pt">${ptHtml || '<div style="color:var(--text3);font-size:13px;padding:12px;text-align:center;grid-column:1/-1">Nenhum Part Time encontrado</div>'}</div>
+    ` : ''}
+  `;
 
   // Calendário do mês selecionado
   renderEscalaCalendar();
