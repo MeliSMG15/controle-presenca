@@ -3845,6 +3845,21 @@ function onImportFileSelected(ev) {
   reader.readAsText(file, 'utf-8');
 }
 
+// Campos estáticos do colaborador (na ordem em que costumam aparecer no CSV)
+const COLAB_STATIC_FIELDS = [
+  'COLABORADOR','ESCALA','DATA ADMISSÃO','DATA FIM CONTRATO','LÍDER','EMPRESA','STATUS',
+  'CICLO','CARGO','ROTA','SAÍDA','ID GROOT','LDAP','ENDEREÇO','TEL','SEXO','TREINAMENTO'
+];
+const DATE_FIELDS = new Set(['DATA ADMISSÃO','DATA FIM CONTRATO']);
+
+function _normalizeDateField(v) {
+  if (!v) return '';
+  const t = v.trim();
+  if (!t) return '';
+  const iso = _brToIso(t);
+  return iso || t;   // se já tá em outro formato, deixa
+}
+
 function processImport(text) {
   const rows = parseCsv(text);
   if (rows.length < 2) {
@@ -3858,10 +3873,15 @@ function processImport(text) {
     const iso = _brToIso(header[i]);
     if (iso) dateCols.push({ col: i, iso });
   }
-  // Identifica colunas fixas (LDAP, COLABORADOR) pelo header
-  const colLdap  = header.findIndex(h => (h||'').trim().toUpperCase() === 'LDAP');
-  const colNome  = header.findIndex(h => (h||'').trim().toUpperCase() === 'COLABORADOR');
-  if (colNome < 0) {
+  // Mapa colunas estáticas: field name → idx
+  const staticColMap = {};
+  COLAB_STATIC_FIELDS.forEach(f => {
+    const idx = header.findIndex(h => (h||'').trim().toUpperCase() === f.toUpperCase());
+    if (idx >= 0) staticColMap[f] = idx;
+  });
+  const colLdap = staticColMap['LDAP'];
+  const colNome = staticColMap['COLABORADOR'];
+  if (colNome === undefined) {
     document.getElementById('import-preview').innerHTML = '<div style="color:#f87171">Coluna COLABORADOR não encontrada no header</div>';
     return;
   }
@@ -3877,19 +3897,50 @@ function processImport(text) {
   });
 
   const updates = {};
-  let matched=0, unmatchedRows=[], changes=0, newCells=0, sameCells=0, skipped=0, invalid=0;
+  const newColabs = [];   // pra exibir na pré-visualização
+  let matched=0, changes=0, newCells=0, sameCells=0, skipped=0, invalid=0, newColabCount=0;
+  let nextNewIdx = allData.length;
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || !row.length || !row[colNome]) continue;
-    const ldap = colLdap >= 0 ? (row[colLdap]||'').trim().toLowerCase() : '';
+    const ldap = colLdap !== undefined ? (row[colLdap]||'').trim().toLowerCase() : '';
     const nome = (row[colNome]||'').trim().toUpperCase();
+
     let idx = ldap ? byLdap.get(ldap) : undefined;
     if (idx === undefined) idx = byNome.get(nome);
+
     if (idx === undefined) {
-      unmatchedRows.push(nome || ldap || `linha ${i+1}`);
+      // Cria novo colaborador
+      idx = nextNewIdx++;
+      const newRow = { attendance: {} };
+      COLAB_STATIC_FIELDS.forEach(f => {
+        const c = staticColMap[f];
+        if (c === undefined) { newRow[f] = ''; return; }
+        let v = (row[c]||'').trim();
+        if (DATE_FIELDS.has(f)) v = _normalizeDateField(v);
+        if (f === 'COLABORADOR') v = v.toUpperCase();
+        newRow[f] = v;
+      });
+      // Preenche attendance dele
+      for (const { col, iso } of dateCols) {
+        const raw = (row[col]||'').trim().toUpperCase();
+        if (!raw) continue;
+        if (!VALID_ATT_VALUES.has(raw)) { invalid++; continue; }
+        newRow.attendance[iso] = raw;
+        newCells++;
+      }
+      // Atualização de índice no Firebase: 1 write inteiro pro novo colab
+      updates[`presenca/data/${idx}`] = newRow;
+      // Atualiza maps locais pra evitar duplicar se houver linhas repetidas
+      if (ldap) byLdap.set(ldap, idx);
+      if (nome) byNome.set(nome, idx);
+      newColabs.push(newRow['COLABORADOR']);
+      newColabCount++;
       continue;
     }
+
+    // Colaborador existente → atualiza só attendance
     matched++;
     const existing = allData[idx].attendance || {};
     for (const { col, iso } of dateCols) {
@@ -3903,7 +3954,7 @@ function processImport(text) {
     }
   }
 
-  _importPayload = { updates, stats: { matched, unmatchedRows, changes, newCells, sameCells, skipped, invalid }, dateCount: dateCols.length };
+  _importPayload = { updates, stats: { matched, newColabCount, changes, newCells, sameCells, skipped, invalid, newColabs }, dateCount: dateCols.length };
 
   const totalWrites = Object.keys(updates).length;
   const host = document.getElementById('import-preview');
@@ -3913,17 +3964,17 @@ function processImport(text) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
         <div>📋 Linhas no CSV: <strong>${rows.length - 1}</strong></div>
         <div>📅 Colunas de data: <strong>${dateCols.length}</strong></div>
-        <div>✓ Colaboradores casados: <strong style="color:#34d399">${matched}</strong></div>
-        <div>✗ Não casados: <strong style="color:${unmatchedRows.length?'#f87171':'var(--text3)'}">${unmatchedRows.length}</strong></div>
-        <div>🆕 Células novas: <strong style="color:#3483FA">${newCells}</strong></div>
-        <div>♻ Células alteradas: <strong style="color:var(--yellow)">${changes}</strong></div>
+        <div>✓ Colaboradores casados (atualiza presença): <strong style="color:#34d399">${matched}</strong></div>
+        <div>➕ Colaboradores novos (serão criados): <strong style="color:${newColabCount?'#3483FA':'var(--text3)'}">${newColabCount}</strong></div>
+        <div>🆕 Células de presença novas: <strong style="color:#3483FA">${newCells}</strong></div>
+        <div>♻ Células de presença alteradas: <strong style="color:var(--yellow)">${changes}</strong></div>
         <div>= Sem mudança: <strong style="color:var(--text3)">${sameCells}</strong></div>
         <div>⊘ Vazias / inválidas: <strong style="color:var(--text3)">${skipped} / ${invalid}</strong></div>
       </div>
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:13px">
         <strong>Total de writes no Firebase:</strong> <span style="color:var(--accent2);font-weight:700">${totalWrites}</span>
       </div>
-      ${unmatchedRows.length ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:#f87171">Ver não casados (${unmatchedRows.length})</summary><div style="max-height:160px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${unmatchedRows.join('<br>')}</div></details>` : ''}
+      ${newColabCount ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:#3483FA">Ver novos colaboradores (${newColabCount})</summary><div style="max-height:160px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${newColabs.join('<br>')}</div></details>` : ''}
     </div>`;
   document.getElementById('btn-confirm-import').style.display = totalWrites > 0 ? '' : 'none';
 }
