@@ -1286,14 +1286,6 @@ table.esc-cal td { position:relative; }
         </select>
       </div>
       <div class="filter-group">
-        <label>● Status</label>
-        <select id="esc-status" onchange="refreshEscala()">
-          <option value="ATIVO">Ativo</option>
-          <option value="INATIVO">Inativo</option>
-          <option value="">Todos</option>
-        </select>
-      </div>
-      <div class="filter-group">
         <label>🔎 Buscar</label>
         <input type="text" class="search-input" id="esc-search" placeholder="Nome..." oninput="refreshEscala()">
       </div>
@@ -4751,10 +4743,10 @@ function escNavMonth(dir) {
 function refreshEscala() {
   if (!escalaMonth) escalaMonth = today().slice(0,7) + '-01';
   const team   = (document.getElementById('esc-team')   || {}).value || '';
-  const status = (document.getElementById('esc-status') || {}).value || '';
   const search = ((document.getElementById('esc-search')|| {}).value || '').trim().toLowerCase();
 
-  const filtered = getFilteredData(team, status, '', '', '').filter(r => {
+  // Escala mostra apenas ATIVOS — inativos não fazem sentido aqui
+  const filtered = getFilteredData(team, 'ATIVO', '', '', '').filter(r => {
     if (!search) return true;
     return ((r['COLABORADOR']||'').toLowerCase().includes(search)
          || (r['LDAP']||'').toLowerCase().includes(search));
