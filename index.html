@@ -1696,6 +1696,13 @@ function getAtt(row, date) {
 
 // Valor "efetivo" da presença: usa o registro manual; se vazio e o grupo do colaborador
 // indica DSR pela escala, retorna 'FOLGA DSR' automaticamente.
+// Nome do líder pra exibição — quando vazio ou '-' substitui por 'Polly'
+function leaderDisplay(row) {
+  const v = (row['LÍDER'] || '').trim();
+  if (!v || v === '-' || v === '—' || v === '–') return 'Polly';
+  return v;
+}
+
 function getEffectiveAtt(row, date) {
   const raw = getAtt(row, date);
   if (raw) return raw;
@@ -2487,7 +2494,7 @@ function renderAusencias(filtered, dates) {
     if (!arr.length) return '';
     const items = arr.map(x => {
       const nome  = (x.row['COLABORADOR']||'').toUpperCase();
-      const lider = (x.row['LÍDER']||'—').toUpperCase();
+      const lider = leaderDisplay(x.row).toUpperCase();
       const dateStr = isRange ? ` <span style="color:var(--text3)">[${formatDate(x.date)}]</span>` : '';
       return `<div>${nome} - ${lider}${dateStr}</div>`;
     }).join('');
@@ -2850,7 +2857,7 @@ function _topOffenders(filtered, dates, limit) {
     dates.forEach(d => {
       if (getEffectiveAtt(r, d).toUpperCase() === 'INJUSTIFICADA') c++;
     });
-    if (c > 0) out.push({ nome: r['COLABORADOR']||'—', lider: r['LÍDER']||'—', count: c });
+    if (c > 0) out.push({ nome: r['COLABORADOR']||'—', lider: leaderDisplay(r), count: c });
   });
   out.sort((a, b) => b.count - a.count || a.nome.localeCompare(b.nome));
   return out.slice(0, limit);
@@ -3203,8 +3210,8 @@ function runCompare() {
   }
   const teamA = _aggregateBy(filtered, datesA, _teamOf);
   const teamB = _aggregateBy(filtered, datesB, _teamOf);
-  const liderA = _aggregateBy(filtered, datesA, r => (r['LÍDER']||'').trim().toUpperCase());
-  const liderB = _aggregateBy(filtered, datesB, r => (r['LÍDER']||'').trim().toUpperCase());
+  const liderA = _aggregateBy(filtered, datesA, r => leaderDisplay(r).toUpperCase());
+  const liderB = _aggregateBy(filtered, datesB, r => leaderDisplay(r).toUpperCase());
 
   const breakdownsInjust = `
     <div class="cmp-section-title">Faltas Injustificadas — por Time e por Líder</div>
@@ -3308,7 +3315,7 @@ function renderFaltasInjustificadasRanking(filtered) {
       </div>`).join('');
   }
   renderBreakdown('fb-team',  aggregate(teamLabel));
-  renderBreakdown('fb-lider', aggregate(r => (r['LÍDER']||'').trim().toUpperCase()));
+  renderBreakdown('fb-lider', aggregate(r => leaderDisplay(r).toUpperCase()));
   renderBreakdown('fb-ciclo', aggregate(r => (r['CICLO']||'').trim().toUpperCase()));
 
   const tbody = document.getElementById('dash-falta-body');
@@ -3346,7 +3353,7 @@ function renderFaltasInjustificadasRanking(filtered) {
     <tr>
       <td><strong>${r['COLABORADOR'] || ''}</strong></td>
       <td>${teamBadge(r)}</td>
-      <td>${r['LÍDER'] || '—'}</td>
+      <td>${leaderDisplay(r)}</td>
       <td style="text-align:center"><span class="badge badge-falta-i" style="font-family:'DM Mono',monospace;font-weight:700">${count}</span></td>
       <td style="text-align:center">${mdBadge}</td>
       <td>${last ? formatDate(last) : '—'}</td>
@@ -3425,7 +3432,7 @@ function refreshPresenca() {
     return `<tr>
       <td><strong style="cursor:pointer;color:var(--accent2)" onclick="openEditFromPresenca(${globalIdx})">${r['COLABORADOR']||''}</strong></td>
       <td>${teamBadge(r)}</td>
-      <td>${r['LÍDER']||'—'}</td>
+      <td>${leaderDisplay(r)}</td>
       <td>${r['CARGO']||'—'}</td>
       <td>${r['ESCALA']||'—'}</td>
       <td>${date ? (() => {
@@ -4133,21 +4140,46 @@ function leaderEmail(row) {
 
 function buildEmailParams(toEmail, toName, row, dateISO) {
   const colab = (row['COLABORADOR'] || '').trim();
-  const lider = (row['LÍDER'] || '').trim();
+  const lider = leaderDisplay(row);
   const dataBR = formatDate(dateISO);
+  const ldap   = (row['LDAP'] || '').trim();
+  const cargo  = (row['CARGO'] || '').trim();
+  const escala = (row['ESCALA'] || '').trim();
+  const ciclo  = (row['CICLO'] || '').trim();
+  const rota   = (row['ROTA'] || '').trim();
+  const empresa= (row['EMPRESA'] || '').trim();
+  const groot  = (row['ID GROOT'] || '').trim();
+
+  // Ticket único pra rastrear o disparo
+  const dateKey = dateISO.replace(/-/g, '');
+  const rand    = Math.floor(Math.random() * 9000 + 1000);
+  const ticket  = `TKT-${dateKey}-${rand}`;
+
+  // Deep link pra aplicar MD direto no app (abre aba Presença + modal Aplicar MD pré-preenchido)
+  const baseUrl = (typeof window !== 'undefined' && window.location)
+    ? (window.location.origin + window.location.pathname)
+    : 'https://melismg15.github.io/controle-presenca/';
+  const linkMd = `${baseUrl}#md=${encodeURIComponent(colab)}&date=${dateISO}`;
+
   const mensagem =
     `O(a) colaborador(a) ${colab} registrou FALTA INJUSTIFICADA no dia ${dataBR}. ` +
     `Por favor, alinhe com o time para tratativa e justificativa formal o quanto antes.`;
+
   return {
     to_email: toEmail,
     to_name: toName,
     colaborador: colab,
-    ldap: (row['LDAP'] || '').trim(),
-    cargo: (row['CARGO'] || '').trim(),
-    escala: (row['ESCALA'] || '').trim(),
+    ldap, cargo, escala, ciclo, rota, empresa,
+    id_groot: groot,
     data_falta: dataBR,
-    lider: lider,
-    mensagem: mensagem
+    lider,
+    mensagem,
+    ticket,
+    unidade: 'SMG15',
+    solicitante: 'acre.gomes@mercadolivre.com',
+    aprovador:   'celso.neves@mercadolivre.com',
+    link_md: linkMd,
+    sent_at: new Date().toLocaleString('pt-BR', { hour12: false }) + ' (BRT)'
   };
 }
 
@@ -4559,6 +4591,38 @@ function init() {
   listenFirebase();
   // Checa periodicamente enquanto a página está aberta (após 10h dispara)
   setInterval(processYesterdayFaltas, 5 * 60 * 1000);
+  // Deep link tipo #md=NOME&date=YYYY-MM-DD vindo do email — abre Presença + modal MD pré-preenchido
+  setTimeout(handleDeepLink, 700);
+}
+
+function handleDeepLink() {
+  const hash = (window.location.hash || '').replace(/^#/, '');
+  if (!hash) return;
+  const params = new URLSearchParams(hash);
+  const md = params.get('md');
+  const date = params.get('date');
+  if (!md) return;
+  switchTab('presenca');
+  // Espera os dados carregarem do Firebase pra preencher direito
+  const tryOpen = (tries=0) => {
+    if (!allData || allData.length === 0) {
+      if (tries < 20) setTimeout(() => tryOpen(tries+1), 250);
+      return;
+    }
+    if (!canEdit()) { notify('Faça login com email @mercadolivre.com pra aplicar MD', 'error'); return; }
+    openMdModal();
+    setTimeout(() => {
+      const input = document.getElementById('md-colab-input');
+      if (input) { input.value = md; onMdColabChange(); }
+      if (date) {
+        const d = document.getElementById('md-date');
+        if (d) d.value = date;
+      }
+    }, 100);
+    // Limpa o hash da URL pra não reabrir se recarregar
+    history.replaceState(null, '', window.location.pathname);
+  };
+  tryOpen();
 }
 window.addEventListener('DOMContentLoaded', init);
 </script>
