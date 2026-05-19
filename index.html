@@ -3897,7 +3897,8 @@ function processImport(text) {
   });
 
   const updates = {};
-  const newColabs = [];   // pra exibir na pré-visualização
+  const newColabs = [];
+  const matchedIdxs = new Set();
   let matched=0, changes=0, newCells=0, sameCells=0, skipped=0, invalid=0, newColabCount=0;
   let nextNewIdx = allData.length;
 
@@ -3942,6 +3943,7 @@ function processImport(text) {
 
     // Colaborador existente → atualiza só attendance
     matched++;
+    matchedIdxs.add(idx);
     const existing = allData[idx].attendance || {};
     for (const { col, iso } of dateCols) {
       const raw = (row[col]||'').trim().toUpperCase();
@@ -3954,7 +3956,26 @@ function processImport(text) {
     }
   }
 
-  _importPayload = { updates, stats: { matched, newColabCount, changes, newCells, sameCells, skipped, invalid, newColabs }, dateCount: dateCols.length };
+  // Ativos no Firebase que NÃO apareceram no CSV (potenciais inativações)
+  const firebaseOnlyActive = [];
+  allData.forEach((r, idx) => {
+    if (matchedIdxs.has(idx)) return;
+    if (!isActive(r)) return;
+    firebaseOnlyActive.push({
+      idx,
+      nome: r['COLABORADOR'] || '',
+      ldap: r['LDAP'] || '',
+      empresa: r['EMPRESA'] || '',
+      lider: r['LÍDER'] || ''
+    });
+  });
+  firebaseOnlyActive.sort((a,b) => a.nome.localeCompare(b.nome));
+
+  _importPayload = {
+    updates,
+    stats: { matched, newColabCount, changes, newCells, sameCells, skipped, invalid, newColabs, firebaseOnlyActive },
+    dateCount: dateCols.length
+  };
 
   const totalWrites = Object.keys(updates).length;
   const host = document.getElementById('import-preview');
@@ -3975,6 +3996,21 @@ function processImport(text) {
         <strong>Total de writes no Firebase:</strong> <span style="color:var(--accent2);font-weight:700">${totalWrites}</span>
       </div>
       ${newColabCount ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:#3483FA">Ver novos colaboradores (${newColabCount})</summary><div style="max-height:160px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${newColabs.join('<br>')}</div></details>` : ''}
+      ${firebaseOnlyActive.length ? `
+        <div style="margin-top:14px;padding:12px;background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.3);border-radius:8px">
+          <div style="font-weight:700;color:#f87171;margin-bottom:6px">⚠ ${firebaseOnlyActive.length} colaborador(es) ATIVO(s) no site não estão no CSV</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Provavelmente saíram da base. Posso marcá-los como <strong>INATIVO</strong> automaticamente.</div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="import-mark-inativo" style="width:16px;height:16px;cursor:pointer">
+            <span>Marcar os ${firebaseOnlyActive.length} ausentes do CSV como <strong style="color:#f87171">INATIVO</strong></span>
+          </label>
+          <details style="margin-top:8px;font-size:12px">
+            <summary style="cursor:pointer;color:#f87171">Ver lista (${firebaseOnlyActive.length})</summary>
+            <div style="max-height:200px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">
+              ${firebaseOnlyActive.map(c => `${c.nome} <span style="color:var(--text3)">— ${c.empresa} · ${c.lider} · ${c.ldap||'sem LDAP'}</span>`).join('<br>')}
+            </div>
+          </details>
+        </div>` : ''}
     </div>`;
   document.getElementById('btn-confirm-import').style.display = totalWrites > 0 ? '' : 'none';
 }
@@ -3982,10 +4018,24 @@ function processImport(text) {
 async function applyImport() {
   if (!_importPayload) return;
   if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode importar')) return;
-  const { updates } = _importPayload;
+  const { updates, stats } = _importPayload;
+
+  // Se a opção de inativar estiver marcada, adiciona os updates de status
+  const markBox = document.getElementById('import-mark-inativo');
+  const willInactivate = markBox && markBox.checked && stats.firebaseOnlyActive && stats.firebaseOnlyActive.length;
+  if (willInactivate) {
+    stats.firebaseOnlyActive.forEach(c => {
+      updates[`presenca/data/${c.idx}/STATUS`] = 'INATIVO';
+    });
+  }
+
   const paths = Object.keys(updates);
   if (!paths.length) { notify('Nada a atualizar', 'error'); return; }
-  if (!confirm(`Aplicar ${paths.length} alteração(ões) no Firebase? Isso sobrescreve os valores existentes.`)) return;
+  const inactCount = willInactivate ? stats.firebaseOnlyActive.length : 0;
+  const msg = inactCount
+    ? `Aplicar ${paths.length} alteração(ões) no Firebase? Isso inclui ${inactCount} colaborador(es) que serão marcados como INATIVO.`
+    : `Aplicar ${paths.length} alteração(ões) no Firebase? Isso sobrescreve os valores existentes.`;
+  if (!confirm(msg)) return;
 
   const btn = document.getElementById('btn-confirm-import');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Aplicando...'; }
