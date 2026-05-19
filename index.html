@@ -1512,6 +1512,7 @@ table.esc-cal td { position:relative; }
     </div>
     <div id="import-preview" style="margin-top:14px;font-size:13px"></div>
     <div class="modal-actions">
+      <button class="btn btn-danger" id="btn-replace-base" style="display:none" onclick="replaceFullBase()">⚠ Substituir base completa</button>
       <div style="flex:1"></div>
       <button class="btn btn-ghost" onclick="closeImportModal()">Cancelar</button>
       <button class="btn btn-primary" id="btn-confirm-import" style="display:none" onclick="applyImport()">⤴ Aplicar mudanças</button>
@@ -3795,7 +3796,10 @@ function openImportModal() {
   document.getElementById('import-file').value = '';
   document.getElementById('import-preview').innerHTML = '';
   document.getElementById('btn-confirm-import').style.display = 'none';
+  const replaceBtn = document.getElementById('btn-replace-base');
+  if (replaceBtn) replaceBtn.style.display = 'none';
   _importPayload = null;
+  _lastCsvText = null;
 }
 function closeImportModal() {
   document.getElementById('modal-import').classList.remove('open');
@@ -3840,10 +3844,15 @@ function onImportFileSelected(ev) {
   const file = ev.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => processImport(e.target.result);
+  reader.onload = e => {
+    _lastCsvText = e.target.result;   // guarda pra possível "substituir base completa"
+    processImport(e.target.result);
+  };
   reader.onerror = () => notify('Falha ao ler o arquivo', 'error');
   reader.readAsText(file, 'utf-8');
 }
+
+let _lastCsvText = null;
 
 // Campos estáticos do colaborador (na ordem em que costumam aparecer no CSV)
 const COLAB_STATIC_FIELDS = [
@@ -4013,6 +4022,86 @@ function processImport(text) {
         </div>` : ''}
     </div>`;
   document.getElementById('btn-confirm-import').style.display = totalWrites > 0 ? '' : 'none';
+  const replaceBtn = document.getElementById('btn-replace-base');
+  if (replaceBtn) replaceBtn.style.display = '';
+}
+
+// Substitui TODA a base por CSV (destrutivo, com backup automático)
+async function replaceFullBase() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode substituir a base')) return;
+  if (!_lastCsvText) { notify('Selecione um CSV primeiro', 'error'); return; }
+
+  // 1. Constrói o array novo do CSV
+  const rows = parseCsv(_lastCsvText);
+  if (rows.length < 2) { notify('CSV vazio', 'error'); return; }
+  const header = rows[0];
+  const dateCols = [];
+  for (let i = 0; i < header.length; i++) {
+    const iso = _brToIso(header[i]);
+    if (iso) dateCols.push({ col: i, iso });
+  }
+  const staticColMap = {};
+  COLAB_STATIC_FIELDS.forEach(f => {
+    const idx = header.findIndex(h => (h||'').trim().toUpperCase() === f.toUpperCase());
+    if (idx >= 0) staticColMap[f] = idx;
+  });
+  if (staticColMap['COLABORADOR'] === undefined) {
+    notify('Coluna COLABORADOR não encontrada', 'error');
+    return;
+  }
+  const newArray = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row[staticColMap['COLABORADOR']]) continue;
+    const obj = { attendance: {} };
+    COLAB_STATIC_FIELDS.forEach(f => {
+      const c = staticColMap[f];
+      if (c === undefined) { obj[f] = ''; return; }
+      let v = (row[c]||'').trim();
+      if (DATE_FIELDS.has(f)) v = _normalizeDateField(v);
+      if (f === 'COLABORADOR') v = v.toUpperCase();
+      obj[f] = v;
+    });
+    for (const { col, iso } of dateCols) {
+      const raw = (row[col]||'').trim().toUpperCase();
+      if (raw && VALID_ATT_VALUES.has(raw)) obj.attendance[iso] = raw;
+    }
+    newArray.push(obj);
+  }
+
+  // 2. Confirmação dupla — operação destrutiva
+  const oldCount = allData.length;
+  const newCount = newArray.length;
+  const msg1 = `⚠ SUBSTITUIR BASE COMPLETA?\n\n` +
+    `Atual:  ${oldCount} colaboradores no Firebase\n` +
+    `Novo:   ${newCount} colaboradores do CSV\n\n` +
+    `Vai criar um BACKUP automático antes (presenca/backup_<timestamp>).\n\n` +
+    `⚠ MDs e Audit Log podem perder referência ao índice antigo.\n\n` +
+    `Confirmar?`;
+  if (!confirm(msg1)) return;
+  const msg2 = `Tem certeza absoluta? Digite "SIM" pra continuar:`;
+  const typed = prompt(msg2);
+  if ((typed||'').trim().toUpperCase() !== 'SIM') { notify('Operação cancelada', 'error'); return; }
+
+  const btn = document.getElementById('btn-replace-base');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Fazendo backup...'; }
+
+  try {
+    // 3. Backup
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    await db.ref('presenca/backup_' + ts).set(allData);
+    if (btn) btn.textContent = '⏳ Substituindo base...';
+
+    // 4. Substitui
+    await db.ref('presenca/data').set(newArray);
+    notify(`✓ Base substituída. ${newCount} colaboradores. Backup em presenca/backup_${ts}`);
+    closeImportModal();
+  } catch (err) {
+    console.error(err);
+    notify('Falha na substituição: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚠ Substituir base completa'; }
+  }
 }
 
 async function applyImport() {
