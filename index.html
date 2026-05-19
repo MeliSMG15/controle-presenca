@@ -2507,13 +2507,8 @@ function renderAusencias(filtered, dates) {
   `;
 }
 
-// Ranking de faltas injustificadas no ano corrente
 // ── Comparação entre períodos ──
-const FORECAST_HISTORY_DAYS = 60;
-const FORECAST_FUTURE_DAYS  = 14;
-let _cmpChartInstance = null;
-
-function renderForecastChart(filtered) {
+function _renderForecastChartLegacy_REMOVED(filtered) {
   const canvas = document.getElementById('cmp-forecast-chart');
   const verdictBox = document.getElementById('cmp-forecast-verdict');
   if (!canvas || typeof Chart === 'undefined') {
