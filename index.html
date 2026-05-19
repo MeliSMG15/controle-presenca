@@ -1170,6 +1170,7 @@ table.esc-cal td { position:relative; }
         <div style="display:flex;align-items:center;gap:12px">
           <span class="table-title">Registro do Dia</span>
           <button class="btn btn-ghost" id="btn-aplicar-md" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="openMdModal()">⚠ Aplicar MD</button>
+          <button class="btn btn-ghost" id="btn-import-csv" style="border-color:rgba(52,211,153,0.4);color:#34d399;font-size:12px;padding:6px 12px;display:none" onclick="openImportModal()">↑ Importar CSV</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="pres-count">0 colaboradores</span>
@@ -1493,6 +1494,27 @@ table.esc-cal td { position:relative; }
     <div class="modal-actions">
       <div style="flex:1"></div>
       <button class="btn btn-ghost" onclick="closeOnlinePanel()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORTAR CSV MODAL -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal" style="width:720px;max-height:90vh;overflow:auto">
+    <div class="modal-title">↑ Importar Presenças via CSV</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px">
+      Sobrescreve presenças/faltas/folgas no Firebase com os valores do CSV.
+      Casa colaboradores por <strong>LDAP</strong> (fallback: nome). Datas no header: <code>DD/MM/AAAA</code>.
+    </div>
+    <div class="form-group full">
+      <label>Arquivo CSV</label>
+      <input type="file" id="import-file" accept=".csv,text/csv" onchange="onImportFileSelected(event)">
+    </div>
+    <div id="import-preview" style="margin-top:14px;font-size:13px"></div>
+    <div class="modal-actions">
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="closeImportModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-confirm-import" style="display:none" onclick="applyImport()">⤴ Aplicar mudanças</button>
     </div>
   </div>
 </div>
@@ -1912,6 +1934,8 @@ function applyDashboardVisibility() {
     }
   }
   if (mdBtn) mdBtn.style.display = allowed ? '' : 'none';
+  const importBtn = document.getElementById('btn-import-csv');
+  if (importBtn) importBtn.style.display = allowed ? '' : 'none';
 }
 
 // ── Presença em tempo real (quem está online) ──
@@ -3761,6 +3785,181 @@ function downloadQr() {
 // ── Medidas Disciplinares ──
 // disciplinares = { [idx]: [ {date, type, obs, at, by}, ... ] }
 let disciplinares = {};
+
+// ── Importação CSV ──
+let _importPayload = null;   // { updates: {path: value}, stats: {...}, unmatched: [...] }
+
+function openImportModal() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode importar')) return;
+  document.getElementById('modal-import').classList.add('open');
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-preview').innerHTML = '';
+  document.getElementById('btn-confirm-import').style.display = 'none';
+  _importPayload = null;
+}
+function closeImportModal() {
+  document.getElementById('modal-import').classList.remove('open');
+  _importPayload = null;
+}
+
+// Parser robusto: lida com aspas duplas e vírgulas dentro de campos quotados
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i+1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if (c === '\r') { /* skip */ }
+      else cur += c;
+    }
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+
+// Converte 'DD/MM/YYYY' → 'YYYY-MM-DD'
+function _brToIso(br) {
+  const m = (br||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+}
+
+const VALID_ATT_VALUES = new Set(['PRESENTE','JUSTIFICADA','INJUSTIFICADA','FOLGA DSR','FÉRIAS','BANCO DE HORAS','INSS','INATIVO']);
+
+function onImportFileSelected(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => processImport(e.target.result);
+  reader.onerror = () => notify('Falha ao ler o arquivo', 'error');
+  reader.readAsText(file, 'utf-8');
+}
+
+function processImport(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) {
+    document.getElementById('import-preview').innerHTML = '<div style="color:#f87171">CSV vazio ou inválido</div>';
+    return;
+  }
+  const header = rows[0];
+  // Acha as colunas de data (header em DD/MM/YYYY)
+  const dateCols = [];   // {col: idx, iso: 'YYYY-MM-DD'}
+  for (let i = 0; i < header.length; i++) {
+    const iso = _brToIso(header[i]);
+    if (iso) dateCols.push({ col: i, iso });
+  }
+  // Identifica colunas fixas (LDAP, COLABORADOR) pelo header
+  const colLdap  = header.findIndex(h => (h||'').trim().toUpperCase() === 'LDAP');
+  const colNome  = header.findIndex(h => (h||'').trim().toUpperCase() === 'COLABORADOR');
+  if (colNome < 0) {
+    document.getElementById('import-preview').innerHTML = '<div style="color:#f87171">Coluna COLABORADOR não encontrada no header</div>';
+    return;
+  }
+
+  // Index allData por LDAP e por NOME pra match
+  const byLdap = new Map();
+  const byNome = new Map();
+  allData.forEach((r, idx) => {
+    const ldap = (r['LDAP']||'').trim().toLowerCase();
+    const nome = (r['COLABORADOR']||'').trim().toUpperCase();
+    if (ldap) byLdap.set(ldap, idx);
+    if (nome) byNome.set(nome, idx);
+  });
+
+  const updates = {};
+  let matched=0, unmatchedRows=[], changes=0, newCells=0, sameCells=0, skipped=0, invalid=0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length || !row[colNome]) continue;
+    const ldap = colLdap >= 0 ? (row[colLdap]||'').trim().toLowerCase() : '';
+    const nome = (row[colNome]||'').trim().toUpperCase();
+    let idx = ldap ? byLdap.get(ldap) : undefined;
+    if (idx === undefined) idx = byNome.get(nome);
+    if (idx === undefined) {
+      unmatchedRows.push(nome || ldap || `linha ${i+1}`);
+      continue;
+    }
+    matched++;
+    const existing = allData[idx].attendance || {};
+    for (const { col, iso } of dateCols) {
+      const raw = (row[col]||'').trim().toUpperCase();
+      if (!raw) { skipped++; continue; }
+      if (!VALID_ATT_VALUES.has(raw)) { invalid++; continue; }
+      const prev = (existing[iso] || '').trim().toUpperCase();
+      if (prev === raw) { sameCells++; continue; }
+      if (prev === '') newCells++; else changes++;
+      updates[`presenca/data/${idx}/attendance/${iso}`] = raw;
+    }
+  }
+
+  _importPayload = { updates, stats: { matched, unmatchedRows, changes, newCells, sameCells, skipped, invalid }, dateCount: dateCols.length };
+
+  const totalWrites = Object.keys(updates).length;
+  const host = document.getElementById('import-preview');
+  host.innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="font-weight:700;margin-bottom:8px">Pré-visualização</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+        <div>📋 Linhas no CSV: <strong>${rows.length - 1}</strong></div>
+        <div>📅 Colunas de data: <strong>${dateCols.length}</strong></div>
+        <div>✓ Colaboradores casados: <strong style="color:#34d399">${matched}</strong></div>
+        <div>✗ Não casados: <strong style="color:${unmatchedRows.length?'#f87171':'var(--text3)'}">${unmatchedRows.length}</strong></div>
+        <div>🆕 Células novas: <strong style="color:#3483FA">${newCells}</strong></div>
+        <div>♻ Células alteradas: <strong style="color:var(--yellow)">${changes}</strong></div>
+        <div>= Sem mudança: <strong style="color:var(--text3)">${sameCells}</strong></div>
+        <div>⊘ Vazias / inválidas: <strong style="color:var(--text3)">${skipped} / ${invalid}</strong></div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:13px">
+        <strong>Total de writes no Firebase:</strong> <span style="color:var(--accent2);font-weight:700">${totalWrites}</span>
+      </div>
+      ${unmatchedRows.length ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:#f87171">Ver não casados (${unmatchedRows.length})</summary><div style="max-height:160px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${unmatchedRows.join('<br>')}</div></details>` : ''}
+    </div>`;
+  document.getElementById('btn-confirm-import').style.display = totalWrites > 0 ? '' : 'none';
+}
+
+async function applyImport() {
+  if (!_importPayload) return;
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode importar')) return;
+  const { updates } = _importPayload;
+  const paths = Object.keys(updates);
+  if (!paths.length) { notify('Nada a atualizar', 'error'); return; }
+  if (!confirm(`Aplicar ${paths.length} alteração(ões) no Firebase? Isso sobrescreve os valores existentes.`)) return;
+
+  const btn = document.getElementById('btn-confirm-import');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Aplicando...'; }
+
+  try {
+    // Aplica em lotes de 500 (limite recomendado do RTDB)
+    const BATCH = 500;
+    let done = 0;
+    for (let i = 0; i < paths.length; i += BATCH) {
+      const chunk = paths.slice(i, i + BATCH);
+      const upd = {};
+      chunk.forEach(p => upd[p] = updates[p]);
+      await db.ref().update(upd);
+      done += chunk.length;
+      if (btn) btn.textContent = `⏳ ${done}/${paths.length}...`;
+    }
+    notify(`✓ Importação concluída: ${paths.length} atualizações`);
+    closeImportModal();
+  } catch (err) {
+    console.error(err);
+    notify('Falha na importação: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⤴ Aplicar mudanças'; }
+  }
+}
 
 function openMdModal() {
   if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode aplicar MD')) return;
