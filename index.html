@@ -6,6 +6,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1118,6 +1119,12 @@ table.esc-cal td { position:relative; }
         </select>
       </div>
       <div class="filter-group">
+        <label>🏬 Empresa (TEMP)</label>
+        <select id="pres-empresa-temp" onchange="refreshPresenca()">
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <div class="filter-group">
         <label>💼 Status</label>
         <select id="pres-status" onchange="refreshPresenca()">
           <option value="ATIVO">Apenas Ativos</option>
@@ -2108,6 +2115,16 @@ function initFilters() {
   });
   ['dash-ciclo','col-ciclo','pres-ciclo'].forEach(id => populateSelect(id, ciclos));
   ['dash-cargo','col-cargo'].forEach(id => populateSelect(id, cargos));
+  // Empresas TEMP (todas as EMPRESAs distintas que não são MELI nem PART TIME)
+  const tempEmpresas = [...new Set(
+    allData
+      .filter(r => isTemp(r))
+      .map(r => (r['EMPRESA']||'').trim())
+      .filter(v => v)
+  )].sort();
+  if (document.getElementById('pres-empresa-temp')) {
+    populateSelect('pres-empresa-temp', tempEmpresas, true);
+  }
 }
 
 // ─────────────────────────────────────────
@@ -2492,6 +2509,169 @@ function renderAusencias(filtered, dates) {
 
 // Ranking de faltas injustificadas no ano corrente
 // ── Comparação entre períodos ──
+const FORECAST_HISTORY_DAYS = 60;
+const FORECAST_FUTURE_DAYS  = 14;
+let _cmpChartInstance = null;
+
+function renderForecastChart(filtered) {
+  const canvas = document.getElementById('cmp-forecast-chart');
+  const verdictBox = document.getElementById('cmp-forecast-verdict');
+  if (!canvas || typeof Chart === 'undefined') {
+    if (verdictBox) verdictBox.innerHTML = '<div class="cmp-trend flat">⚠ Lib de gráficos não carregou</div>';
+    return;
+  }
+
+  // 1. Janela histórica: HIST_DAYS dias atrás → hoje
+  const t = new Date(); t.setHours(12,0,0,0);
+  const hist = [];
+  for (let i = FORECAST_HISTORY_DAYS - 1; i >= 0; i--) {
+    const d = new Date(t); d.setDate(t.getDate() - i);
+    hist.push({ iso: _toISO(d), count: 0 });
+  }
+  filtered.forEach(r => {
+    hist.forEach(h => {
+      if (getEffectiveAtt(r, h.iso).toUpperCase() === 'INJUSTIFICADA') h.count++;
+    });
+  });
+
+  // 2. Regressão linear (OLS) — y = slope*x + intercept
+  const n  = hist.length;
+  const ys = hist.map(h => h.count);
+  let sumX=0, sumY=0, sumXY=0, sumX2=0;
+  for (let i=0; i<n; i++) { sumX+=i; sumY+=ys[i]; sumXY+=i*ys[i]; sumX2+=i*i; }
+  const denom = (n * sumX2 - sumX * sumX) || 1;
+  const slope = (n * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / n;
+
+  // 3. Previsão futura
+  const future = [];
+  for (let i = 1; i <= FORECAST_FUTURE_DAYS; i++) {
+    const d = new Date(t); d.setDate(t.getDate() + i);
+    future.push({ iso: _toISO(d) });
+  }
+
+  const labels = [...hist.map(h => formatDate(h.iso).slice(0,5)),
+                  ...future.map(f => formatDate(f.iso).slice(0,5))];
+
+  const actual = [...ys, ...Array(FORECAST_FUTURE_DAYS).fill(null)];
+  const trend = [];
+  for (let i = 0; i < n + FORECAST_FUTURE_DAYS; i++) {
+    trend.push(Math.max(0, +(slope * i + intercept).toFixed(2)));
+  }
+
+  // 4. Verdict
+  const avgPast      = sumY / n;
+  const valueNow     = Math.max(0, slope * (n - 1) + intercept);
+  const valueFuture  = Math.max(0, slope * (n + FORECAST_FUTURE_DAYS - 1) + intercept);
+  const pctRel       = avgPast > 0 ? +(slope * FORECAST_FUTURE_DAYS / avgPast * 100).toFixed(1) : 0;
+
+  let cls, icon, txt;
+  if (slope <= -0.05)      { cls = 'up';   icon = '📉'; txt = 'MELHORA prevista'; }
+  else if (slope >=  0.05) { cls = 'down'; icon = '📈'; txt = 'PIORA prevista'; }
+  else                     { cls = 'flat'; icon = '➖'; txt = 'ESTÁVEL'; }
+
+  if (verdictBox) {
+    verdictBox.innerHTML = `<div class="cmp-trend ${cls}" style="margin:0">
+      <span style="font-size:22px">${icon}</span>
+      <div style="line-height:1.45">
+        <div>${txt} — slope ${slope >= 0 ? '+' : ''}${slope.toFixed(3)} FI/dia</div>
+        <div style="font-size:12px;font-weight:400;color:var(--text2)">
+          Média histórica: <strong>${avgPast.toFixed(1)} FI/dia</strong> ·
+          Hoje (tendência): <strong>${valueNow.toFixed(1)}</strong> ·
+          Em ${FORECAST_FUTURE_DAYS} dias: <strong>${valueFuture.toFixed(1)}</strong>
+          ${avgPast > 0 ? ` · Variação prevista: <strong>${pctRel >= 0 ? '+' : ''}${pctRel}%</strong>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // 5. Render Chart
+  if (_cmpChartInstance) { _cmpChartInstance.destroy(); _cmpChartInstance = null; }
+  const ctx = canvas.getContext('2d');
+
+  // Plugin custom pra desenhar linha vertical no "hoje"
+  const todayDivider = {
+    id: 'todayDivider',
+    afterDraw(chart) {
+      const xScale = chart.scales.x;
+      const x = xScale.getPixelForValue(n - 1);
+      const yTop = chart.scales.y.top, yBot = chart.scales.y.bottom;
+      const c = chart.ctx;
+      c.save();
+      c.beginPath();
+      c.strokeStyle = 'rgba(255,230,0,0.45)';
+      c.setLineDash([5, 4]);
+      c.lineWidth = 1.5;
+      c.moveTo(x, yTop);
+      c.lineTo(x, yBot);
+      c.stroke();
+      c.setLineDash([]);
+      c.fillStyle = 'rgba(255,230,0,0.85)';
+      c.font = 'bold 10px DM Mono, monospace';
+      c.fillText('hoje', x + 5, yTop + 12);
+      c.restore();
+    }
+  };
+
+  _cmpChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Faltas Injustificadas (real)',
+          data: actual,
+          borderColor: '#3483FA',
+          backgroundColor: 'rgba(52,131,250,0.14)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+          spanGaps: false
+        },
+        {
+          label: 'Tendência + Previsão',
+          data: trend,
+          borderColor: '#FFE600',
+          borderDash: [7, 5],
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0,
+          fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#e8edf5', font: { size: 12 }, padding: 14 } },
+        tooltip: {
+          backgroundColor: '#0a1124',
+          titleColor: '#e8edf5',
+          bodyColor: '#95a8c8',
+          borderColor: '#2c3a60',
+          borderWidth: 1
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#95a8c8', maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+          grid:  { color: 'rgba(255,255,255,0.04)' }
+        },
+        y: {
+          ticks: { color: '#95a8c8', precision: 0 },
+          grid:  { color: 'rgba(255,255,255,0.06)' },
+          beginAtZero: true
+        }
+      }
+    },
+    plugins: [todayDivider]
+  });
+}
+
 function openCompareModal() {
   document.getElementById('modal-compare').classList.add('open');
   renderCompareInputs('a');
@@ -2500,6 +2680,10 @@ function openCompareModal() {
 }
 function closeCompareModal() {
   document.getElementById('modal-compare').classList.remove('open');
+  if (_cmpChartInstance) {
+    try { _cmpChartInstance.destroy(); } catch(e) {}
+    _cmpChartInstance = null;
+  }
 }
 
 function _buildWeekOpts(selected) {
@@ -2662,6 +2846,217 @@ function _topOffenders(filtered, dates, limit) {
   });
   out.sort((a, b) => b.count - a.count || a.nome.localeCompare(b.nome));
   return out.slice(0, limit);
+}
+
+// ── Forecast (regressão linear simples) ──
+let _cmpChartInstance = null;
+const FORECAST_HISTORY_DAYS = 60;
+const FORECAST_FUTURE_DAYS = 14;
+
+function _computeDailySeries(filtered, startISO, endISO, key /* 'INJUSTIFICADA' | 'PRESENTE' | 'JUSTIFICADA' */) {
+  const series = [];
+  const start = new Date(startISO + 'T12:00:00');
+  const end   = new Date(endISO + 'T12:00:00');
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+    const iso = _toISO(d);
+    let count = 0;
+    filtered.forEach(r => {
+      if (getEffectiveAtt(r, iso).toUpperCase() === key) count++;
+    });
+    series.push({ date: iso, value: count });
+  }
+  return series;
+}
+
+function _linearRegression(values) {
+  const n = values.length;
+  if (n < 2) return { slope: 0, intercept: values[0] || 0 };
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for (let i = 0; i < n; i++) {
+    sumX  += i;
+    sumY  += values[i];
+    sumXY += i * values[i];
+    sumX2 += i * i;
+  }
+  const denom = n * sumX2 - sumX * sumX;
+  if (denom === 0) return { slope: 0, intercept: sumY / n };
+  const slope = (n * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / n;
+  return { slope, intercept };
+}
+
+function renderForecastChart(filtered) {
+  // Janela de histórico: últimos 60 dias até hoje
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - (FORECAST_HISTORY_DAYS - 1));
+  const histStart = _toISO(start);
+  const histEnd   = _toISO(today);
+
+  const seriesFI = _computeDailySeries(filtered, histStart, histEnd, 'INJUSTIFICADA');
+  const seriesP  = _computeDailySeries(filtered, histStart, histEnd, 'PRESENTE');
+
+  const ysFI = seriesFI.map(d => d.value);
+  const reg = _linearRegression(ysFI);
+
+  // Trend nos pontos históricos
+  const trendHist = ysFI.map((_, i) => Math.max(0, reg.slope * i + reg.intercept));
+  // Forecast nos próximos N dias
+  const forecastDates = [];
+  const forecastVals = [];
+  for (let i = 0; i < FORECAST_FUTURE_DAYS; i++) {
+    const idx = ysFI.length + i;
+    const d = new Date(today);
+    d.setDate(today.getDate() + i + 1);
+    forecastDates.push(_toISO(d));
+    forecastVals.push(Math.max(0, reg.slope * idx + reg.intercept));
+  }
+
+  // Labels combinados (histórico + futuro)
+  const allLabels = [...seriesFI.map(s => s.date), ...forecastDates];
+  // Real: só nos dias históricos; null no futuro
+  const actualFI    = [...ysFI, ...Array(FORECAST_FUTURE_DAYS).fill(null)];
+  const actualPres  = [...seriesP.map(s => s.value), ...Array(FORECAST_FUTURE_DAYS).fill(null)];
+  // Tendência: nos dias históricos + futuros
+  const trendFull   = [...trendHist, ...forecastVals];
+
+  // Formato BR pra labels (curto)
+  const labelsBR = allLabels.map(iso => {
+    const p = iso.split('-');
+    return `${p[2]}/${p[1]}`;
+  });
+
+  // Veredicto baseado no slope
+  // Slope > 0 → faltas subindo → PIORA
+  // Slope < 0 → faltas caindo → MELHORA
+  const slopePerWeek = reg.slope * 7;        // mudança esperada em 1 semana
+  const avgFI = ysFI.reduce((a,b) => a+b, 0) / Math.max(1, ysFI.length);
+  let verdictClass, verdictIcon, verdictText, verdictColor;
+  if (slopePerWeek > 0.3) {
+    verdictClass = 'down'; verdictIcon = '📉'; verdictText = 'PIORA prevista';
+    verdictColor = '#f87171';
+  } else if (slopePerWeek < -0.3) {
+    verdictClass = 'up'; verdictIcon = '📈'; verdictText = 'MELHORA prevista';
+    verdictColor = '#34d399';
+  } else {
+    verdictClass = 'flat'; verdictIcon = '➖'; verdictText = 'TENDÊNCIA ESTÁVEL';
+    verdictColor = 'var(--text2)';
+  }
+  // Previsão acumulada nos próximos 14 dias
+  const sumNext14 = forecastVals.reduce((a,b) => a+b, 0);
+  const avgNext14 = sumNext14 / FORECAST_FUTURE_DAYS;
+
+  // Render do veredicto + estatísticas
+  const verdictBox = document.getElementById('cmp-forecast-verdict');
+  if (verdictBox) {
+    verdictBox.innerHTML = `
+      <div class="cmp-trend ${verdictClass}" style="margin:0">
+        ${verdictIcon} <span>${verdictText}</span>
+        <span style="font-weight:400;color:var(--text2);font-size:12px;margin-left:8px">
+          · Slope: ${reg.slope.toFixed(3)} FI/dia (${slopePerWeek > 0 ? '+' : ''}${slopePerWeek.toFixed(1)}/semana)
+          · Média histórica: ${avgFI.toFixed(1)} FI/dia
+          · Previsão próx. 14d: ${Math.round(sumNext14)} faltas (${avgNext14.toFixed(1)}/dia)
+        </span>
+      </div>`;
+  }
+
+  // Destrói chart anterior
+  if (_cmpChartInstance) {
+    try { _cmpChartInstance.destroy(); } catch(e) {}
+    _cmpChartInstance = null;
+  }
+  const canvas = document.getElementById('cmp-forecast-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+
+  // Linha divisória entre histórico e previsão (anotação simples via plugin de barras)
+  const splitIdx = ysFI.length - 1;
+
+  _cmpChartInstance = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: labelsBR,
+      datasets: [
+        {
+          label: 'Faltas Injustificadas (real)',
+          data: actualFI,
+          borderColor: '#f87171',
+          backgroundColor: 'rgba(248,113,113,0.10)',
+          fill: true,
+          tension: 0.25,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+          spanGaps: false
+        },
+        {
+          label: 'Presentes (real, eixo direito)',
+          data: actualPres,
+          borderColor: 'rgba(52,211,153,0.6)',
+          backgroundColor: 'rgba(52,211,153,0.05)',
+          fill: false,
+          tension: 0.25,
+          pointRadius: 0,
+          borderWidth: 1.5,
+          yAxisID: 'y2',
+          spanGaps: false
+        },
+        {
+          label: 'Tendência + Previsão',
+          data: trendFull,
+          borderColor: '#FFE600',
+          borderDash: [6, 4],
+          backgroundColor: 'transparent',
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          borderWidth: 2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#e8edf5', font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: '#1c2645',
+          borderColor: '#2c3a60',
+          borderWidth: 1,
+          titleColor: '#FFE600',
+          bodyColor: '#e8edf5',
+          callbacks: {
+            title: (items) => {
+              if (!items.length) return '';
+              const idx = items[0].dataIndex;
+              const future = idx > splitIdx;
+              return `${labelsBR[idx]} ${future ? '· previsão' : ''}`;
+            }
+          }
+        },
+        annotation: {} // placeholder caso adicionemos plugin no futuro
+      },
+      scales: {
+        x: {
+          ticks: { color: '#95a8c8', maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+          grid: { color: 'rgba(255,255,255,0.04)' }
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Faltas Injustificadas / dia', color: '#f87171', font: { size: 11 } },
+          ticks: { color: '#95a8c8' },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        },
+        y2: {
+          position: 'right',
+          beginAtZero: true,
+          title: { display: true, text: 'Presentes / dia', color: '#34d399', font: { size: 11 } },
+          ticks: { color: '#95a8c8' },
+          grid: { display: false }
+        }
+      }
+    }
+  });
 }
 
 function runCompare() {
@@ -2831,10 +3226,22 @@ function runCompare() {
       ${renderTop('🅱 Período B', topB, 'var(--meli)')}
     </div>`;
 
-  host.innerHTML = trendBox + summary + chart + table + breakdownsInjust + breakdownsPres + topBox + `
+  // ── Forecast: gráfico de linha grande com previsão dos próximos 14 dias ──
+  const forecastBlock = `
+    <div class="cmp-section-title">Previsão — próximos ${FORECAST_FUTURE_DAYS} dias (regressão linear sobre ${FORECAST_HISTORY_DAYS} dias)</div>
+    <div id="cmp-forecast-verdict" style="margin-bottom:10px"></div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;height:380px">
+      <canvas id="cmp-forecast-chart" style="width:100%;height:100%"></canvas>
+    </div>`;
+
+  host.innerHTML = trendBox + summary + chart + table + breakdownsInjust + breakdownsPres + topBox + forecastBlock + `
     <div style="margin-top:10px;font-size:11px;color:var(--text3)">
       Legenda do delta: <span style="color:#34d399">verde</span> = movimento positivo · <span style="color:#f87171">vermelho</span> = movimento negativo · <span style="color:var(--text3)">cinza</span> = neutro · Taxa de Presença = presenças ÷ (HC ativos × dias) · Base HC = HCs ativos filtrados
+      <br>Previsão: linha amarela tracejada (regressão linear simples). Slope &gt; 0 indica aumento esperado de faltas; slope &lt; 0 indica redução.
     </div>`;
+
+  // Renderiza o chart depois que o canvas tá no DOM
+  setTimeout(() => renderForecastChart(filtered), 0);
 }
 
 function renderFaltasInjustificadasRanking(filtered) {
@@ -2953,6 +3360,7 @@ function clearDashFilters() {
 function refreshPresenca() {
   const date = document.getElementById('pres-date').value;
   const team = document.getElementById('pres-team').value;
+  const empresaTemp = document.getElementById('pres-empresa-temp').value;
   const status = document.getElementById('pres-status').value;
   const lider = document.getElementById('pres-lider').value;
   const ciclo = document.getElementById('pres-ciclo').value;
@@ -2960,6 +3368,10 @@ function refreshPresenca() {
   const attFilter = document.getElementById('pres-att-filter').value;
 
   let rows = getFilteredData(team, status, lider, ciclo, '');
+  // Filtro de empresa TEMP — só faz sentido se o time for TEMP ou "Todos"
+  if (empresaTemp) {
+    rows = rows.filter(r => isTemp(r) && (r['EMPRESA']||'').trim().toUpperCase() === empresaTemp.toUpperCase());
+  }
   if (search) rows = rows.filter(r => (r['COLABORADOR']||'').toLowerCase().includes(search) || (r['LDAP']||'').toLowerCase().includes(search));
   if (attFilter && date) rows = rows.filter(r => getEffectiveAtt(r, date).toUpperCase() === attFilter.toUpperCase());
 
