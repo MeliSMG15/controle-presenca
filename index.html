@@ -3436,12 +3436,12 @@ function refreshPresenca() {
   // Contadores por colaborador (pra renderização da última coluna em modo intervalo)
   const perColab = new Map();
   if (hasDate) rows.forEach(r => {
-    const c = { p:0, fj:0, fi:0, fd:0, fe:0, bh:0, inss:0, pend:0 };
+    const c = { p:0, fj:0, fi:0, fd:0, fe:0, bh:0, inss:0, pend:0, fjDates:[], fiDates:[] };
     dates.forEach(d => {
       const av = getEffectiveAtt(r, d).toUpperCase();
       if (av === 'PRESENTE')        { presente++; c.p++; }
-      else if (av === 'JUSTIFICADA'){ just++;     c.fj++; }
-      else if (av === 'INJUSTIFICADA'){ injust++; c.fi++; }
+      else if (av === 'JUSTIFICADA'){ just++;     c.fj++; c.fjDates.push(d); }
+      else if (av === 'INJUSTIFICADA'){ injust++; c.fi++; c.fiDates.push(d); }
       else if (av === 'FOLGA DSR')   { folga++;   c.fd++; }
       else if (av === 'FÉRIAS')      { c.fe++; }
       else if (av === 'BANCO DE HORAS') { c.bh++; }
@@ -3489,11 +3489,13 @@ function refreshPresenca() {
     if (!hasDate) {
       presCell = '<span style="color:var(--text3);font-size:12px">Selecione data</span>';
     } else if (isRange) {
-      const c = perColab.get(r) || {p:0,fj:0,fi:0,fd:0,fe:0,bh:0,inss:0,pend:0};
+      const c = perColab.get(r) || {p:0,fj:0,fi:0,fd:0,fe:0,bh:0,inss:0,pend:0,fjDates:[],fiDates:[]};
       const parts = [];
+      const fjTip = c.fjDates.length ? `Justificada nos dias:\n${c.fjDates.map(formatDate).join('\n')}` : '';
+      const fiTip = c.fiDates.length ? `Injustificada nos dias:\n${c.fiDates.map(formatDate).join('\n')}` : '';
       if (c.p)    parts.push(`<span style="color:#34d399">${c.p}P</span>`);
-      if (c.fj)   parts.push(`<span style="color:var(--yellow)">${c.fj}FJ</span>`);
-      if (c.fi)   parts.push(`<span style="color:#f87171">${c.fi}FI</span>`);
+      if (c.fj)   parts.push(`<span title="${fjTip}" style="color:var(--yellow);cursor:help;border-bottom:1px dotted var(--yellow)">${c.fj}FJ</span>`);
+      if (c.fi)   parts.push(`<span title="${fiTip}" style="color:#f87171;cursor:help;border-bottom:1px dotted #f87171">${c.fi}FI</span>`);
       if (c.fd)   parts.push(`<span style="color:#c084fc">${c.fd}FD</span>`);
       if (c.fe)   parts.push(`<span style="color:#22d3ee">${c.fe}FE</span>`);
       if (c.bh)   parts.push(`<span style="color:#fb923c">${c.bh}BH</span>`);
