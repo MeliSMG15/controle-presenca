@@ -1108,12 +1108,16 @@ table.esc-cal td { position:relative; }
   <div class="view" id="view-presenca">
     <div class="filters-bar">
       <div class="filter-group">
-        <label>📅 Data</label>
+        <label>📅 De</label>
         <div class="day-selector">
           <button class="day-nav-btn" onclick="navigateDay(-1)">‹</button>
-          <input type="date" class="day-input" id="pres-date" onchange="refreshPresenca()">
+          <input type="date" class="day-input" id="pres-date" onchange="onPresDateChange('from')">
           <button class="day-nav-btn" onclick="navigateDay(1)">›</button>
         </div>
+      </div>
+      <div class="filter-group">
+        <label>📅 Até</label>
+        <input type="date" class="day-input" id="pres-date-to" onchange="onPresDateChange('to')">
       </div>
       <div class="filter-group">
         <label>🏢 Time</label>
@@ -3402,7 +3406,13 @@ function clearDashFilters() {
 // PRESENÇA
 // ─────────────────────────────────────────
 function refreshPresenca() {
-  const date = document.getElementById('pres-date').value;
+  const dateFrom = document.getElementById('pres-date').value;
+  const dateTo   = (document.getElementById('pres-date-to')||{}).value || dateFrom;
+  const dates    = dateRangeList(dateFrom, dateTo);
+  const hasDate  = dates.length > 0;
+  const isRange  = dates.length > 1;
+  const date     = dateFrom;  // mantém compat com código abaixo (single-day usa este)
+
   const team = document.getElementById('pres-team').value;
   const empresaTemp = document.getElementById('pres-empresa-temp').value;
   const status = document.getElementById('pres-status').value;
@@ -3412,31 +3422,44 @@ function refreshPresenca() {
   const attFilter = document.getElementById('pres-att-filter').value;
 
   let rows = getFilteredData(team, status, lider, ciclo, '');
-  // Filtro de empresa TEMP — só faz sentido se o time for TEMP ou "Todos"
   if (empresaTemp) {
     rows = rows.filter(r => isTemp(r) && (r['EMPRESA']||'').trim().toUpperCase() === empresaTemp.toUpperCase());
   }
   if (search) rows = rows.filter(r => (r['COLABORADOR']||'').toLowerCase().includes(search) || (r['LDAP']||'').toLowerCase().includes(search));
-  if (attFilter && date) rows = rows.filter(r => getEffectiveAtt(r, date).toUpperCase() === attFilter.toUpperCase());
+  // Filtro de status (PRESENTE/INJUSTIFICADA/etc) — em modo intervalo, mantém quem teve esse status em qualquer dia
+  if (attFilter && hasDate) {
+    rows = rows.filter(r => dates.some(d => getEffectiveAtt(r, d).toUpperCase() === attFilter.toUpperCase()));
+  }
 
-  // Stats
+  // Stats — soma ocorrências-dia em todo o intervalo
   let presente=0, just=0, injust=0, folga=0, pendente=0, total=rows.length;
-  if (date) rows.forEach(r => {
-    const av = getEffectiveAtt(r, date).toUpperCase();
-    if (av === 'PRESENTE') presente++;
-    else if (av === 'JUSTIFICADA') just++;
-    else if (av === 'INJUSTIFICADA') injust++;
-    else if (av === 'FOLGA DSR') folga++;
-    else if (av === '') pendente++;   // sem registro e sem DSR planejado
+  // Contadores por colaborador (pra renderização da última coluna em modo intervalo)
+  const perColab = new Map();
+  if (hasDate) rows.forEach(r => {
+    const c = { p:0, fj:0, fi:0, fd:0, fe:0, bh:0, inss:0, pend:0 };
+    dates.forEach(d => {
+      const av = getEffectiveAtt(r, d).toUpperCase();
+      if (av === 'PRESENTE')        { presente++; c.p++; }
+      else if (av === 'JUSTIFICADA'){ just++;     c.fj++; }
+      else if (av === 'INJUSTIFICADA'){ injust++; c.fi++; }
+      else if (av === 'FOLGA DSR')   { folga++;   c.fd++; }
+      else if (av === 'FÉRIAS')      { c.fe++; }
+      else if (av === 'BANCO DE HORAS') { c.bh++; }
+      else if (av === 'INSS')        { c.inss++; }
+      else if (av === '')            { pendente++; c.pend++; }
+    });
+    perColab.set(r, c);
   });
-  const pctPend = (date && total > 0) ? Math.round(pendente / total * 100) : 0;
+  const totalCells = total * dates.length;
+  const pctPend = (hasDate && totalCells > 0) ? Math.round(pendente / totalCells * 100) : 0;
+  const subInfo = isRange ? `período (${dates.length} dias)` : 'no dia';
 
   document.getElementById('pres-stats').innerHTML = `
-    <div class="stat-card green"><div class="stat-label">Presentes</div><div class="stat-value">${date?presente:'—'}</div></div>
-    <div class="stat-card yellow"><div class="stat-label">Justificadas</div><div class="stat-value">${date?just:'—'}</div></div>
-    <div class="stat-card red"><div class="stat-label">Injustificadas</div><div class="stat-value">${date?injust:'—'}</div></div>
-    <div class="stat-card purple"><div class="stat-label">Folga DSR</div><div class="stat-value">${date?folga:'—'}</div></div>
-    <div class="stat-card orange"><div class="stat-label">Sem registro</div><div class="stat-value">${date?pendente:'—'}</div><div class="stat-sub">${date ? pctPend + '% pendente' : 'Selecione data'}</div></div>
+    <div class="stat-card green"><div class="stat-label">Presentes</div><div class="stat-value">${hasDate?presente:'—'}</div><div class="stat-sub">${hasDate?subInfo:''}</div></div>
+    <div class="stat-card yellow"><div class="stat-label">Justificadas</div><div class="stat-value">${hasDate?just:'—'}</div><div class="stat-sub">${hasDate?subInfo:''}</div></div>
+    <div class="stat-card red"><div class="stat-label">Injustificadas</div><div class="stat-value">${hasDate?injust:'—'}</div><div class="stat-sub">${hasDate?subInfo:''}</div></div>
+    <div class="stat-card purple"><div class="stat-label">Folga DSR</div><div class="stat-value">${hasDate?folga:'—'}</div><div class="stat-sub">${hasDate?subInfo:''}</div></div>
+    <div class="stat-card orange"><div class="stat-label">Sem registro</div><div class="stat-value">${hasDate?pendente:'—'}</div><div class="stat-sub">${hasDate ? pctPend + '% pendente' : 'Selecione data'}</div></div>
     <div class="stat-card blue"><div class="stat-label">Total Filtrado</div><div class="stat-value">${total}</div></div>
   `;
 
@@ -3447,6 +3470,10 @@ function refreshPresenca() {
 
   document.getElementById('pres-count').textContent = `${rows.length} colaboradores`;
 
+  // Header da última coluna muda em modo intervalo
+  const thPres = document.querySelector('#pres-table thead th:last-child');
+  if (thPres) thPres.textContent = isRange ? `Presença (${dates.length} dias)` : 'Presença';
+
   const tbody = document.getElementById('pres-body');
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div>Nenhum colaborador encontrado</div></td></tr>';
@@ -3456,21 +3483,42 @@ function refreshPresenca() {
 
   tbody.innerHTML = pageRows.map((r, i) => {
     const globalIdx = allData.indexOf(r);
-    const att = date ? getEffectiveAtt(r, date) : '';
-    const opts = ATT_OPTIONS.map(o => `<option value="${o}" ${att === o ? 'selected' : ''}>${o || '—'}</option>`).join('');
+
+    // Última coluna: em modo intervalo, mostra contadores; em modo 1 dia, dropdown
+    let presCell;
+    if (!hasDate) {
+      presCell = '<span style="color:var(--text3);font-size:12px">Selecione data</span>';
+    } else if (isRange) {
+      const c = perColab.get(r) || {p:0,fj:0,fi:0,fd:0,fe:0,bh:0,inss:0,pend:0};
+      const parts = [];
+      if (c.p)    parts.push(`<span style="color:#34d399">${c.p}P</span>`);
+      if (c.fj)   parts.push(`<span style="color:var(--yellow)">${c.fj}FJ</span>`);
+      if (c.fi)   parts.push(`<span style="color:#f87171">${c.fi}FI</span>`);
+      if (c.fd)   parts.push(`<span style="color:#c084fc">${c.fd}FD</span>`);
+      if (c.fe)   parts.push(`<span style="color:#22d3ee">${c.fe}FE</span>`);
+      if (c.bh)   parts.push(`<span style="color:#fb923c">${c.bh}BH</span>`);
+      if (c.inss) parts.push(`<span style="color:#94a3b8">${c.inss}INSS</span>`);
+      if (c.pend) parts.push(`<span style="color:var(--text3)">${c.pend}—</span>`);
+      presCell = parts.length
+        ? `<span style="font-family:'DM Mono',monospace;font-size:12px;display:inline-flex;gap:8px;flex-wrap:wrap">${parts.join('')}</span>`
+        : '<span style="color:var(--text3);font-size:12px">—</span>';
+    } else {
+      const att = getEffectiveAtt(r, date);
+      const opts = ATT_OPTIONS.map(o => `<option value="${o}" ${att === o ? 'selected' : ''}>${o || '—'}</option>`).join('');
+      const aud = auditLog[`${globalIdx}_${date}`];
+      const ttl = aud ? `Marcado por ${aud.by} em ${formatAuditDate(aud.at)}` : 'Sem registro de autor';
+      const initials = aud && aud.by ? (aud.by.split(/\s+/).map(s=>s[0]).join('').slice(0,2)) : '';
+      const badge = aud ? `<span title="${ttl}" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);margin-left:6px;padding:2px 5px;background:var(--surface2);border:1px solid var(--border);border-radius:4px">${initials}</span>` : '';
+      presCell = `<select class="att-select" data-idx="${globalIdx}" data-date="${date}" title="${ttl}" onchange="updateAtt(this)">${opts}</select>${badge}`;
+    }
+
     return `<tr>
       <td><strong style="cursor:pointer;color:var(--accent2)" onclick="openEditFromPresenca(${globalIdx})">${r['COLABORADOR']||''}</strong></td>
       <td>${teamBadge(r)}</td>
       <td>${leaderDisplay(r)}</td>
       <td>${r['CARGO']||'—'}</td>
       <td>${r['ESCALA']||'—'}</td>
-      <td>${date ? (() => {
-        const aud = auditLog[`${globalIdx}_${date}`];
-        const ttl = aud ? `Marcado por ${aud.by} em ${formatAuditDate(aud.at)}` : 'Sem registro de autor';
-        const initials = aud && aud.by ? (aud.by.split(/\s+/).map(s=>s[0]).join('').slice(0,2)) : '';
-        const badge = aud ? `<span title="${ttl}" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);margin-left:6px;padding:2px 5px;background:var(--surface2);border:1px solid var(--border);border-radius:4px">${initials}</span>` : '';
-        return `<select class="att-select" data-idx="${globalIdx}" data-date="${date}" title="${ttl}" onchange="updateAtt(this)">${opts}</select>${badge}`;
-      })() : '<span style="color:var(--text3);font-size:12px">Selecione data</span>'}</td>
+      <td>${presCell}</td>
     </tr>`;
   }).join('');
 
@@ -3509,13 +3557,27 @@ function savePresencaChanges() {
   notify('Alterações salvas com sucesso!');
 }
 
+function onPresDateChange(which) {
+  const fromEl = document.getElementById('pres-date');
+  const toEl   = document.getElementById('pres-date-to');
+  if (!fromEl || !toEl) { refreshPresenca(); return; }
+  // Mantém consistência: Até nunca antes do De
+  if (which === 'from' && fromEl.value && (!toEl.value || toEl.value < fromEl.value)) toEl.value = fromEl.value;
+  if (which === 'to'   && toEl.value   && (!fromEl.value || fromEl.value > toEl.value)) fromEl.value = toEl.value;
+  refreshPresenca();
+}
+
 function navigateDay(dir) {
   const inp = document.getElementById('pres-date');
+  const toEl = document.getElementById('pres-date-to');
   const cur = inp.value;
-  if (!cur) { inp.value = today(); refreshPresenca(); return; }
+  if (!cur) { inp.value = today(); if (toEl) toEl.value = today(); refreshPresenca(); return; }
   const d = new Date(cur + 'T12:00:00');
   d.setDate(d.getDate() + dir);
-  inp.value = d.toISOString().split('T')[0];
+  const iso = d.toISOString().split('T')[0];
+  inp.value = iso;
+  // Quando navega por dia único, sincroniza o "Até" pra mesma data (modo 1 dia)
+  if (toEl) toEl.value = iso;
   refreshPresenca();
 }
 
@@ -4429,6 +4491,8 @@ function init() {
   document.getElementById('dash-date-from').value = t;
   document.getElementById('dash-date-to').value = t;
   document.getElementById('pres-date').value = t;
+  const presTo = document.getElementById('pres-date-to');
+  if (presTo) presTo.value = t;
   populateWeekSelect();
 
   // Default status filter to ATIVO
@@ -5020,6 +5084,8 @@ function init() {
   document.getElementById('dash-date-from').value = t;
   document.getElementById('dash-date-to').value = t;
   document.getElementById('pres-date').value = t;
+  const presTo = document.getElementById('pres-date-to');
+  if (presTo) presTo.value = t;
   populateWeekSelect();
   document.getElementById('dash-status').value = 'ATIVO';
   document.getElementById('pres-status').value = 'ATIVO';
