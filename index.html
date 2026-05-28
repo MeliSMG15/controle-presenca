@@ -5093,6 +5093,15 @@ function init() {
   document.getElementById('pres-status').value = 'ATIVO';
   document.getElementById('col-status').value = 'ATIVO';
   document.getElementById('loading-overlay').classList.add('show');
+  // Timeout de segurança: se Firebase não responder em 12s (ex: bloqueado pelo Edge Tracking Prevention),
+  // tira o spinner e mostra aviso
+  setTimeout(() => {
+    const ov = document.getElementById('loading-overlay');
+    if (ov && ov.classList.contains('show')) {
+      ov.classList.remove('show');
+      notify('Não consegui conectar no Firebase. Tente: (1) abrir em janela InPrivate (Ctrl+Shift+N), (2) usar Chrome, ou (3) desativar Tracking Prevention pro site.', 'error');
+    }
+  }, 12000);
   renderAuthUI();
   applyReadOnlyMode();
   applyDashboardVisibility();
