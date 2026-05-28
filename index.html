@@ -1445,11 +1445,23 @@ table.esc-cal td { position:relative; }
 
 <!-- MODAL: COMPARAR PERÍODOS -->
 <div class="modal-overlay" id="modal-compare">
-  <div class="modal" style="width:820px;max-height:90vh;overflow:auto">
-    <div class="modal-title">📊 Comparação entre períodos</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:16px">Escolha dois períodos pra comparar Presentes, Faltas e novos HCs (por data de admissão).</div>
+  <div class="modal" id="modal-compare-inner" style="width:min(96vw,1400px);max-width:96vw;max-height:94vh;overflow:auto">
+    <div class="modal-title">📊 Análise de Comparação</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px" id="cmp-mode-desc">Escolha dois períodos pra comparar Presentes, Faltas e novos HCs.</div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+    <div style="display:flex;gap:12px;margin-bottom:16px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">
+      <span style="font-size:12px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.6px;align-self:center">Modo:</span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+        <input type="radio" name="cmp-mode" value="periods" checked onchange="onCompareModeChange()">
+        <span>Períodos (A vs B)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+        <input type="radio" name="cmp-mode" value="teams" onchange="onCompareModeChange()">
+        <span>Times: Fixo (MELI + TEMP) vs Part Time</span>
+      </label>
+    </div>
+
+    <div id="cmp-grid-periods" style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px">
         <div style="font-weight:700;color:var(--accent2);margin-bottom:10px;font-size:14px">🅰 Período A</div>
         <div class="form-group full">
@@ -3107,7 +3119,185 @@ function renderForecastChart(filtered) {
   });
 }
 
+function runCompareTeams() {
+  // Mesmo período pros dois (usa o "Período A")
+  const dates = getCompareDates('a');
+  const host = document.getElementById('cmp-result');
+  if (!dates.length) {
+    host.innerHTML = '<div style="color:#f87171;padding:12px;background:rgba(239,68,68,0.08);border-radius:8px">Selecione um período válido em "🅰 Período A".</div>';
+    return;
+  }
+
+  // Aplica os filtros do dashboard (Status/Líder/Ciclo/Cargo) — IGNORA o filtro de Time
+  // pra poder comparar entre os dois grupos
+  const status = document.getElementById('dash-status').value;
+  const lider  = document.getElementById('dash-lider').value;
+  const ciclo  = document.getElementById('dash-ciclo').value;
+  const cargo  = document.getElementById('dash-cargo').value;
+  const filtered = getFilteredData('', status, lider, ciclo, cargo);
+
+  const fixoRows = filtered.filter(r => !isPartTime(r));
+  const ptRows   = filtered.filter(r => isPartTime(r));
+
+  const A = computeCompareMetrics(dates, fixoRows);   // Time Fixo
+  const B = computeCompareMetrics(dates, ptRows);     // Part Time
+
+  if (!A || !B) {
+    host.innerHTML = '<div style="color:#f87171;padding:12px;background:rgba(239,68,68,0.08);border-radius:8px">Sem dados pra comparar.</div>';
+    return;
+  }
+
+  // Bases (HCs ativos × dias)
+  const hcFixo = fixoRows.filter(r => isActive(r)).length;
+  const hcPT   = ptRows.filter(r => isActive(r)).length;
+  const baseA  = hcFixo * A.dias;
+  const baseB  = hcPT   * B.dias;
+  const taxaPresA = baseA > 0 ? +(A.presente / baseA * 100).toFixed(1) : 0;
+  const taxaPresB = baseB > 0 ? +(B.presente / baseB * 100).toFixed(1) : 0;
+  const taxaAbsA  = baseA > 0 ? +((A.just + A.injust) / baseA * 100).toFixed(1) : 0;
+  const taxaAbsB  = baseB > 0 ? +((B.just + B.injust) / baseB * 100).toFixed(1) : 0;
+
+  const metrics = [
+    { label: 'Presentes',             a: A.presente, b: B.presente, dir: 'up-good' },
+    { label: 'Faltas Justificadas',   a: A.just,     b: B.just,     dir: 'down-good' },
+    { label: 'Faltas Injustificadas', a: A.injust,   b: B.injust,   dir: 'down-good' },
+    { label: 'Folga DSR',             a: A.folga,    b: B.folga,    dir: 'neutral' },
+    { label: 'Férias',                a: A.ferias,   b: B.ferias,   dir: 'neutral' },
+    { label: 'HCs novos (admissão no período)', a: A.hcNovos, b: B.hcNovos, dir: 'up-good' }
+  ];
+
+  // Cards-resumo
+  function summaryCard(label, va, vb, dir, fmt) {
+    const f = fmt || (x => x);
+    const dlt = _cmpDelta(va, vb, dir);
+    return `<div class="cmp-summary-card">
+      <div class="cmp-summary-label">${label}</div>
+      <div class="cmp-summary-val">${f(va)} <small style="color:var(--text3);font-size:11px">/ ${f(vb)}</small></div>
+      <div class="cmp-summary-delta">Fixo vs PT: ${dlt.html}</div>
+    </div>`;
+  }
+  const summary = `
+    <div class="cmp-summary-grid">
+      ${summaryCard('Presentes',         A.presente, B.presente, 'up-good')}
+      ${summaryCard('Faltas Injustificadas', A.injust, B.injust, 'down-good')}
+      ${summaryCard('Taxa de Presença',  taxaPresA, taxaPresB, 'up-good', v => v + '%')}
+      ${summaryCard('Taxa de Falta',     taxaAbsA,  taxaAbsB,  'down-good', v => v + '%')}
+    </div>`;
+
+  // Gráfico
+  const maxVal = Math.max(1, ...metrics.flatMap(m => [m.a, m.b]));
+  const chart = `
+    <div class="cmp-section-title">Gráfico comparativo</div>
+    <div class="cmp-chart">
+      ${metrics.map(m => `
+        <div class="cmp-chart-row">
+          <div class="cmp-chart-label">${m.label}</div>
+          <div class="cmp-chart-bars">
+            <div class="cmp-bar a" style="width:${(m.a/maxVal*100).toFixed(1)}%">Fixo · ${m.a}</div>
+            <div class="cmp-bar b" style="width:${(m.b/maxVal*100).toFixed(1)}%">PT · ${m.b}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+
+  // Tabela
+  const periodLabel = _periodLabel('a');
+  const dateLabel   = `${formatDate(A.from)}–${formatDate(A.to)} · ${A.dias} dia(s)`;
+  const head = `
+    <tr>
+      <th style="text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px">Métrica</th>
+      <th style="text-align:right;padding:10px 12px;border-bottom:1px solid var(--border);color:var(--accent2)">🔧 Time Fixo<br><small style="color:var(--text3);font-weight:400">${hcFixo} HCs ativos</small></th>
+      <th style="text-align:right;padding:10px 12px;border-bottom:1px solid var(--border);color:var(--meli)">⏱ Part Time<br><small style="color:var(--text3);font-weight:400">${hcPT} HCs ativos</small></th>
+      <th style="text-align:right;padding:10px 12px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px">Fixo − PT</th>
+    </tr>`;
+  const rows = metrics.map(m => `
+    <tr>
+      <td style="padding:10px 12px;border-bottom:1px solid var(--border)">${m.label}</td>
+      <td style="text-align:right;padding:10px 12px;border-bottom:1px solid var(--border);font-weight:700;font-family:'DM Mono',monospace">${m.a}</td>
+      <td style="text-align:right;padding:10px 12px;border-bottom:1px solid var(--border);font-weight:700;font-family:'DM Mono',monospace">${m.b}</td>
+      <td style="text-align:right;padding:10px 12px;border-bottom:1px solid var(--border)">${_cmpDelta(m.a, m.b, m.dir).html}</td>
+    </tr>`).join('');
+  const table = `
+    <div class="cmp-section-title">Detalhamento — Período: ${periodLabel} (${dateLabel})</div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>${head}</thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  // Por líder dentro de cada grupo
+  function _agg(rows) {
+    return _aggregateBy(rows, dates, r => leaderDisplay(r).toUpperCase());
+  }
+  function renderBd(title, aggA, aggB, metricKey) {
+    const keys = new Set([...aggA.keys(), ...aggB.keys()]);
+    const rows = [...keys].sort().map(k => {
+      const a = (aggA.get(k) || {})[metricKey] || 0;
+      const b = (aggB.get(k) || {})[metricKey] || 0;
+      const dl = _cmpDelta(a, b, metricKey === 'injust' ? 'down-good' : 'up-good');
+      return `<div class="cmp-bd-row">
+        <span class="nm">${k}</span>
+        <span class="va">F · ${a}</span>
+        <span class="vb">PT · ${b}</span>
+        <span class="dl">${dl.html}</span>
+      </div>`;
+    }).join('');
+    return `<div class="cmp-bd-card"><h4>${title}</h4>${rows || '<div style="color:var(--text3);font-size:13px;text-align:center;padding:8px">Sem dados</div>'}</div>`;
+  }
+  const aggFixoLider = _agg(fixoRows);
+  const aggPTLider   = _agg(ptRows);
+  const breakdown = `
+    <div class="cmp-section-title">Por Líder — Fixo vs Part Time</div>
+    <div class="cmp-bd-grid">
+      ${renderBd('Injustificadas por Líder', aggFixoLider, aggPTLider, 'injust')}
+      ${renderBd('Presenças por Líder', aggFixoLider, aggPTLider, 'presente')}
+    </div>`;
+
+  // Top ofensores em cada grupo
+  function renderTop(label, list, color) {
+    if (!list.length) return `<div class="cmp-bd-card"><h4 style="color:${color}">${label}</h4><div style="color:var(--text3);font-size:13px;text-align:center;padding:8px">Sem ofensores</div></div>`;
+    const rows = list.map(o => `<div class="cmp-bd-row" style="grid-template-columns:1fr auto"><span class="nm">${o.nome} <small style="color:var(--text3)">· ${o.lider}</small></span><span style="font-family:'DM Mono',monospace;color:#f87171;font-weight:700">${o.count}</span></div>`).join('');
+    return `<div class="cmp-bd-card"><h4 style="color:${color}">${label}</h4>${rows}</div>`;
+  }
+  const topF = _topOffenders(fixoRows, dates, 5);
+  const topPT = _topOffenders(ptRows, dates, 5);
+  const topBox = `
+    <div class="cmp-section-title">Top 5 ofensores em cada grupo</div>
+    <div class="cmp-bd-grid">
+      ${renderTop('🔧 Time Fixo', topF, 'var(--accent2)')}
+      ${renderTop('⏱ Part Time', topPT, 'var(--meli)')}
+    </div>`;
+
+  host.innerHTML = summary + chart + table + breakdown + topBox + `
+    <div style="margin-top:10px;font-size:11px;color:var(--text3)">
+      Modo: <strong>Times (Fixo vs Part Time)</strong> · Time Fixo = MELI + TEMP (não Part Time) · Taxa = ocorrências ÷ (HC ativos × dias) · Respeita filtros de Status/Líder/Ciclo/Cargo do Dashboard (ignora filtro de Time).
+    </div>`;
+}
+
+function _getCompareMode() {
+  const r = document.querySelector('input[name="cmp-mode"]:checked');
+  return r ? r.value : 'periods';
+}
+
+function onCompareModeChange() {
+  const mode = _getCompareMode();
+  const grid = document.getElementById('cmp-grid-periods');
+  const desc = document.getElementById('cmp-mode-desc');
+  // Período B só aparece em modo "periods"
+  const blockB = grid?.children?.[1];
+  if (blockB) blockB.style.display = (mode === 'periods') ? '' : 'none';
+  if (grid) grid.style.gridTemplateColumns = (mode === 'periods') ? '1fr 1fr' : '1fr';
+  if (desc) desc.textContent = (mode === 'periods')
+    ? 'Escolha dois períodos pra comparar Presentes, Faltas e novos HCs.'
+    : 'Escolha um período e compare métricas entre Time Fixo (MELI + TEMP) e Part Time.';
+  // Limpa resultado anterior pra evitar confusão
+  document.getElementById('cmp-result').innerHTML = '';
+}
+
 function runCompare() {
+  const mode = _getCompareMode();
+  if (mode === 'teams') return runCompareTeams();
   const team = document.getElementById('dash-team').value;
   const status = document.getElementById('dash-status').value;
   const lider = document.getElementById('dash-lider').value;
@@ -4522,13 +4712,19 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 function listenFirebase() {
+  console.log('[fb] Subscribing to presenca/data ...');
   db.ref('presenca/data').on('value', snap => {
+    console.log('[fb] presenca/data callback received, exists:', snap.exists());
     const val = snap.val();
     if (val && Array.isArray(val) && val.length > 0) {
       allData = val;
     } else {
       allData = [...EMBEDDED_DATA];
-      db.ref('presenca/data').set(allData);
+      console.log('[fb] No data in Firebase, attempting to write EMBEDDED_DATA');
+      db.ref('presenca/data').set(allData).catch(e => {
+        console.error('[fb] WRITE failed:', e);
+        notify('Erro ao escrever no Firebase: ' + (e.message || e.code || e), 'error');
+      });
     }
     initFilters();
     renderColumnPicker();
@@ -4538,6 +4734,10 @@ function listenFirebase() {
     refreshEscala();
     document.getElementById('loading-overlay').classList.remove('show');
     processYesterdayFaltas();
+  }, err => {
+    console.error('[fb] presenca/data READ failed:', err);
+    document.getElementById('loading-overlay').classList.remove('show');
+    notify('Falha ao ler Firebase: ' + (err.message || err.code || err) + '. Verifique as regras de segurança do Firebase Realtime DB.', 'error');
   });
   db.ref('.info/connected').on('value', s => {
     const dot = document.getElementById('online-dot');
