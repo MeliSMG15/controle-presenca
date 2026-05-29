@@ -1288,6 +1288,7 @@ table.esc-cal td { position:relative; }
         <span class="table-title">Colaboradores</span>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="col-count">0 colaboradores</span>
+          <button class="btn btn-ghost" id="btn-update-escalas" onclick="openEscalaUpdate()" style="font-size:12px;padding:5px 12px;color:#34d399;border-color:rgba(52,211,153,0.4);display:none">🔄 Atualizar Escalas</button>
           <button class="btn btn-csv" onclick="exportCSV()" style="font-size:12px;padding:5px 12px">⬇ CSV</button>
         </div>
       </div>
@@ -1975,6 +1976,8 @@ function applyDashboardVisibility() {
   if (mdBtn) mdBtn.style.display = allowed ? '' : 'none';
   const importBtn = document.getElementById('btn-import-csv');
   if (importBtn) importBtn.style.display = allowed ? '' : 'none';
+  const updEscBtn = document.getElementById('btn-update-escalas');
+  if (updEscBtn) updEscBtn.style.display = allowed ? '' : 'none';
 }
 
 // ── Presença em tempo real (quem está online) ──
@@ -4065,6 +4068,105 @@ let disciplinares = {};
 
 // ── Importação CSV ──
 let _importPayload = null;   // { updates: {path: value}, stats: {...}, unmatched: [...] }
+
+// ── Atualizar Escalas via escalas.csv (apenas o campo ESCALA) ──
+async function openEscalaUpdate() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode atualizar escalas')) return;
+  let csv;
+  try {
+    const resp = await fetch('escalas.csv', { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    csv = await resp.text();
+  } catch (e) {
+    notify('Falha ao carregar escalas.csv: ' + (e.message || e), 'error');
+    return;
+  }
+  applyEscalaCsv(csv);
+}
+
+// Normaliza nome pra matching: remove acentos, uppercase, espaços extras
+function _normName(s) {
+  return (s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function _normEscala(v) {
+  const t = (v || '').trim().toUpperCase().replace(/#?N\/A/i, '');
+  if (!t) return '';
+  // Normaliza listas tipo "DOM, SEG, TER" → "DOM,SEG,TER"
+  if (t.includes(',')) {
+    return t.split(',').map(x => x.trim()).filter(Boolean).join(',');
+  }
+  return t;
+}
+
+function applyEscalaCsv(csvText) {
+  const rows = parseCsv(csvText);
+  if (!rows.length) { notify('CSV vazio', 'error'); return; }
+
+  // Indexa allData por nome normalizado
+  const byName = new Map();
+  allData.forEach((r, idx) => {
+    const k = _normName(r['COLABORADOR']);
+    if (k) byName.set(k, idx);
+  });
+
+  const updates = {};
+  const matched = [];
+  const unmatched = [];
+  const unchanged = [];
+
+  rows.forEach(row => {
+    if (!row || !row[0]) return;
+    const nome = row[0].trim();
+    const esc  = _normEscala(row[1] || '');
+    const key  = _normName(nome);
+    if (!key) return;
+    const idx = byName.get(key);
+    if (idx === undefined) {
+      unmatched.push(nome);
+      return;
+    }
+    const cur = _normEscala(allData[idx]['ESCALA'] || '');
+    if (cur === esc) {
+      unchanged.push({ idx, nome, esc });
+      return;
+    }
+    updates[`presenca/data/${idx}/ESCALA`] = esc;
+    matched.push({ idx, nome, from: cur || '(vazio)', to: esc || '(vazio)' });
+  });
+
+  const totalWrites = Object.keys(updates).length;
+  const host = document.getElementById('import-preview');
+  // Reusa o modal de import pra mostrar o preview
+  document.getElementById('modal-import').classList.add('open');
+  document.getElementById('import-file').value = '';
+  document.getElementById('btn-confirm-import').style.display = 'none';
+  const replaceBtn = document.getElementById('btn-replace-base');
+  if (replaceBtn) replaceBtn.style.display = 'none';
+
+  _importPayload = { updates };
+  _lastCsvText = null;
+
+  host.innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="font-weight:700;margin-bottom:8px">🔄 Atualização de Escalas (apenas o campo ESCALA)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+        <div>📋 Linhas no CSV: <strong>${rows.length}</strong></div>
+        <div>✓ Casados: <strong style="color:#34d399">${matched.length + unchanged.length}</strong></div>
+        <div>♻ Vão mudar: <strong style="color:var(--yellow)">${matched.length}</strong></div>
+        <div>= Já iguais: <strong style="color:var(--text3)">${unchanged.length}</strong></div>
+        <div>✗ Não casados: <strong style="color:${unmatched.length?'#f87171':'var(--text3)'}">${unmatched.length}</strong></div>
+        <div>Total writes: <strong style="color:var(--accent2)">${totalWrites}</strong></div>
+      </div>
+      ${matched.length ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:var(--yellow)">Ver mudanças (${matched.length})</summary><div style="max-height:200px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${matched.map(m => `${m.nome}: <span style="color:var(--text3)">${m.from}</span> → <span style="color:#34d399">${m.to}</span>`).join('<br>')}</div></details>` : ''}
+      ${unmatched.length ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:#f87171">Não casados (${unmatched.length})</summary><div style="max-height:160px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${unmatched.join('<br>')}</div></details>` : ''}
+    </div>`;
+  document.getElementById('btn-confirm-import').style.display = totalWrites > 0 ? '' : 'none';
+}
 
 function openImportModal() {
   if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode importar')) return;
