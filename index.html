@@ -1187,6 +1187,7 @@ table.esc-cal td { position:relative; }
           <option value="INJUSTIFICADA">Injustificada</option>
           <option value="FOLGA DSR">Folga DSR</option>
           <option value="FÉRIAS">Férias</option>
+          <option value="__SEM_REGISTRO__">Sem registro</option>
         </select>
       </div>
     </div>
@@ -3642,7 +3643,12 @@ function refreshPresenca() {
   if (search) rows = rows.filter(r => (r['COLABORADOR']||'').toLowerCase().includes(search) || (r['LDAP']||'').toLowerCase().includes(search));
   // Filtro de status (PRESENTE/INJUSTIFICADA/etc) — em modo intervalo, mantém quem teve esse status em qualquer dia
   if (attFilter && hasDate) {
-    rows = rows.filter(r => dates.some(d => getEffectiveAtt(r, d).toUpperCase() === attFilter.toUpperCase()));
+    if (attFilter === '__SEM_REGISTRO__') {
+      // Quem tem PELO MENOS UM dia sem registro (vazio) no intervalo
+      rows = rows.filter(r => dates.some(d => getEffectiveAtt(r, d) === ''));
+    } else {
+      rows = rows.filter(r => dates.some(d => getEffectiveAtt(r, d).toUpperCase() === attFilter.toUpperCase()));
+    }
   }
 
   // Stats — soma ocorrências-dia em todo o intervalo
