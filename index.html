@@ -1281,6 +1281,7 @@ table.esc-cal td { position:relative; }
           <span class="table-title">Registro do Dia</span>
           <button class="btn btn-ghost" id="btn-aplicar-md" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="openMdModal()">⚠ Aplicar MD</button>
           <button class="btn btn-ghost" id="btn-import-csv" style="border-color:rgba(52,211,153,0.4);color:#34d399;font-size:12px;padding:6px 12px;display:none" onclick="openImportModal()">↑ Importar CSV</button>
+          <button class="btn btn-ghost" id="btn-clear-future" style="border-color:rgba(248,113,113,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="clearFuturePresentes()" title="Remove apenas PRESENTE de dias após hoje. Mantém FOLGA DSR, FÉRIAS, JUSTIFICADA, INJUSTIFICADA.">🗑 Limpar PRESENTE futuros</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="pres-count">0 colaboradores</span>
@@ -2070,6 +2071,8 @@ function applyDashboardVisibility() {
   if (importBtn) importBtn.style.display = allowed ? '' : 'none';
   const updEscBtn = document.getElementById('btn-update-escalas');
   if (updEscBtn) updEscBtn.style.display = allowed ? '' : 'none';
+  const clearBtn = document.getElementById('btn-clear-future');
+  if (clearBtn) clearBtn.style.display = allowed ? '' : 'none';
 }
 
 // ── Presença em tempo real (quem está online) ──
@@ -3926,6 +3929,80 @@ async function backfillPresencaRange() {
     notify('Falha no backfill: ' + (err.message || err), 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🩹 Preencher Presença'; }
+  }
+}
+
+// Limpa apenas valores PRESENTE em datas posteriores a hoje. Mantém FOLGA DSR, FÉRIAS, etc.
+async function clearFuturePresentes() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode limpar')) return;
+  const t = today();
+  const updates = {};
+  const auditUpdates = {};
+  const editor = getCurrentEditor() || 'CLEANUP';
+  const email  = getCurrentEditorEmail() || null;
+  const at = Date.now();
+  let count = 0;
+  const affected = new Set();   // colaboradores afetados
+
+  allData.forEach((r, idx) => {
+    if (!r || !r.attendance) return;
+    Object.keys(r.attendance).forEach(d => {
+      if (d <= t) return;                                  // só datas DEPOIS de hoje
+      const v = (r.attendance[d] || '').trim().toUpperCase();
+      if (v === 'PRESENTE') {
+        updates[`presenca/data/${idx}/attendance/${d}`] = null;     // remove no Firebase
+        auditUpdates[`presenca/auditLog/${idx}/${d}`] = { val: '', by: editor, byEmail: email, at, cleanup: true };
+        count++;
+        affected.add(idx);
+      }
+    });
+  });
+
+  if (count === 0) { notify('Nenhum PRESENTE em datas futuras pra limpar', 'error'); return; }
+
+  if (!confirm(
+      `Remover ${count} marcação(ões) de PRESENTE em datas > ${formatDate(t)} ` +
+      `(${affected.size} colaboradores afetados)?\n\n` +
+      `FOLGA DSR, FÉRIAS, JUSTIFICADA, INJUSTIFICADA, BANCO DE HORAS e INSS serão preservados.\n\n` +
+      `Confirmar?`
+  )) return;
+
+  const btn = document.getElementById('btn-clear-future');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Limpando...'; }
+
+  try {
+    const all = Object.assign({}, updates, auditUpdates);
+    const paths = Object.keys(all);
+    const BATCH = 500;
+    let done = 0;
+    for (let i = 0; i < paths.length; i += BATCH) {
+      const chunk = paths.slice(i, i + BATCH);
+      const upd = {};
+      chunk.forEach(p => upd[p] = all[p]);
+      await db.ref().update(upd);
+      done += chunk.length;
+      if (btn) btn.textContent = `⏳ ${done}/${paths.length}...`;
+    }
+    // Atualiza local
+    Object.keys(updates).forEach(path => {
+      const m = path.match(/^presenca\/data\/(\d+)\/attendance\/(.+)$/);
+      if (m) {
+        const idx = parseInt(m[1]);
+        if (allData[idx]?.attendance) delete allData[idx].attendance[m[2]];
+      }
+    });
+    Object.entries(auditUpdates).forEach(([path, val]) => {
+      const m = path.match(/^presenca\/auditLog\/(\d+)\/(.+)$/);
+      if (m) auditLog[`${m[1]}_${m[2]}`] = val;
+    });
+    notify(`✓ ${count} PRESENTE(s) futuro(s) removido(s)`);
+    refreshPresenca();
+    refreshDashboard();
+  } catch (err) {
+    console.error(err);
+    notify('Falha na limpeza: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🗑 Limpar PRESENTE futuros'; }
   }
 }
 
