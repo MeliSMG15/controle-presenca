@@ -1865,8 +1865,8 @@ function getEffectiveAtt(row, date) {
   }
   // Part Time NÃO recebe default — líder marca manualmente
   if (isPartTime(row)) return '';
-  // Default PRESENTE só pra HOJE em diante — datas passadas vazias ficam vazias
-  if (date < today()) return '';
+  // Default PRESENTE só pra HOJE — passado e futuro ficam vazios (futuro só mostra FOLGA DSR planejada)
+  if (date !== today()) return '';
   return 'PRESENTE';
 }
 
