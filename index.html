@@ -1281,7 +1281,6 @@ table.esc-cal td { position:relative; }
           <span class="table-title">Registro do Dia</span>
           <button class="btn btn-ghost" id="btn-aplicar-md" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="openMdModal()">⚠ Aplicar MD</button>
           <button class="btn btn-ghost" id="btn-import-csv" style="border-color:rgba(52,211,153,0.4);color:#34d399;font-size:12px;padding:6px 12px;display:none" onclick="openImportModal()">↑ Importar CSV</button>
-          <button class="btn btn-ghost" id="btn-clear-future" style="border-color:rgba(248,113,113,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="clearFuturePresentes()" title="Remove apenas PRESENTE de dias após hoje. Mantém FOLGA DSR, FÉRIAS, JUSTIFICADA, INJUSTIFICADA.">🗑 Limpar PRESENTE futuros</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="pres-count">0 colaboradores</span>
@@ -2071,8 +2070,6 @@ function applyDashboardVisibility() {
   if (importBtn) importBtn.style.display = allowed ? '' : 'none';
   const updEscBtn = document.getElementById('btn-update-escalas');
   if (updEscBtn) updEscBtn.style.display = allowed ? '' : 'none';
-  const clearBtn = document.getElementById('btn-clear-future');
-  if (clearBtn) clearBtn.style.display = allowed ? '' : 'none';
 }
 
 // ── Presença em tempo real (quem está online) ──
