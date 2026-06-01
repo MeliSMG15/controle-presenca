@@ -1199,6 +1199,7 @@ table.esc-cal td { position:relative; }
           <span class="table-title">Registro do Dia</span>
           <button class="btn btn-ghost" id="btn-aplicar-md" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="openMdModal()">⚠ Aplicar MD</button>
           <button class="btn btn-ghost" id="btn-import-csv" style="border-color:rgba(52,211,153,0.4);color:#34d399;font-size:12px;padding:6px 12px;display:none" onclick="openImportModal()">↑ Importar CSV</button>
+          <button class="btn btn-ghost" id="btn-backfill-pres" style="border-color:rgba(52,131,250,0.4);color:#3483FA;font-size:12px;padding:6px 12px;display:none" onclick="backfillPresencaRange()" title="Marca PRESENTE pra todos sem registro no intervalo (respeitando DSR e ignorando Part Time)">🩹 Preencher Presença</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="pres-count">0 colaboradores</span>
@@ -1978,6 +1979,8 @@ function applyDashboardVisibility() {
   if (importBtn) importBtn.style.display = allowed ? '' : 'none';
   const updEscBtn = document.getElementById('btn-update-escalas');
   if (updEscBtn) updEscBtn.style.display = allowed ? '' : 'none';
+  const bfBtn = document.getElementById('btn-backfill-pres');
+  if (bfBtn) bfBtn.style.display = allowed ? '' : 'none';
 }
 
 // ── Presença em tempo real (quem está online) ──
@@ -3736,6 +3739,100 @@ function refreshPresenca() {
   }).join('');
 
   renderPagination('pres-pagination', rows.length, presPerPg, presPg, 'pres');
+}
+
+// Backfill: marca PRESENTE pros ativos não-Part Time que não têm registro manual no intervalo selecionado.
+// Respeita FOLGA DSR da escala (escreve FOLGA DSR nesse caso) e nunca sobrescreve registros existentes.
+async function backfillPresencaRange() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode preencher presença')) return;
+  const fromV = document.getElementById('pres-date').value;
+  const toV   = (document.getElementById('pres-date-to') || {}).value || fromV;
+  const dates = dateRangeList(fromV, toV);
+  if (!dates.length) { notify('Selecione um intervalo válido em De/Até', 'error'); return; }
+
+  // Constrói updates
+  const updates = {};
+  const auditUpdates = {};
+  const editor = getCurrentEditor() || 'BACKFILL';
+  const email  = getCurrentEditorEmail() || null;
+  const at = Date.now();
+  let countP = 0, countD = 0, skip = 0;
+
+  allData.forEach((r, idx) => {
+    if (!r) return;
+    if (!isActive(r)) return;
+    if (isPartTime(r)) return;        // PT nunca recebe default
+
+    // Datas válidas do contrato
+    const adm = (r['DATA ADMISSÃO']||'').split('T')[0];
+    const fim = (r['DATA FIM CONTRATO']||'').split('T')[0];
+
+    dates.forEach(d => {
+      if (adm && d < adm) return;
+      if (fim && d > fim) return;
+      const raw = (r.attendance && r.attendance[d] || '').trim();
+      if (raw) { skip++; return; }    // já tem registro manual — preserva
+
+      // Verifica DSR pela escala
+      const grp = (r['ESCALA']||'').trim().toUpperCase();
+      let val = 'PRESENTE';
+      if (['A','B','C'].includes(grp) && typeof getEscalaDay === 'function') {
+        if (getEscalaDay(grp, d) === 'DSR') val = 'FOLGA DSR';
+      }
+      updates[`presenca/data/${idx}/attendance/${d}`] = val;
+      auditUpdates[`presenca/auditLog/${idx}/${d}`] = { val, by: editor, byEmail: email, at, backfill: true };
+      if (val === 'PRESENTE') countP++; else countD++;
+    });
+  });
+
+  const total = countP + countD;
+  if (total === 0) {
+    notify('Nada pra preencher — todos os dias do intervalo já têm registro', 'error');
+    return;
+  }
+
+  const dStr = dates.length === 1 ? formatDate(dates[0]) : `${formatDate(dates[0])} a ${formatDate(dates[dates.length-1])}`;
+  if (!confirm(`Preencher PRESENTE pra ${countP} dia(s)-pessoa e FOLGA DSR pra ${countD} dia(s)-pessoa (total ${total}) no intervalo ${dStr}?\n\nRegistros existentes NÃO serão alterados (${skip} preservados).\n\nConfirmar?`)) return;
+
+  const btn = document.getElementById('btn-backfill-pres');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Aplicando...'; }
+
+  try {
+    // Combina todos os updates num só objeto
+    const all = Object.assign({}, updates, auditUpdates);
+    const paths = Object.keys(all);
+    const BATCH = 500;
+    let done = 0;
+    for (let i = 0; i < paths.length; i += BATCH) {
+      const chunk = paths.slice(i, i + BATCH);
+      const upd = {};
+      chunk.forEach(p => upd[p] = all[p]);
+      await db.ref().update(upd);
+      done += chunk.length;
+      if (btn) btn.textContent = `⏳ ${done}/${paths.length}...`;
+    }
+    // Atualiza dados locais pra refletir
+    Object.entries(updates).forEach(([path, val]) => {
+      const m = path.match(/^presenca\/data\/(\d+)\/attendance\/(.+)$/);
+      if (m) {
+        const idx = parseInt(m[1]);
+        if (!allData[idx].attendance) allData[idx].attendance = {};
+        allData[idx].attendance[m[2]] = val;
+      }
+    });
+    Object.entries(auditUpdates).forEach(([path, val]) => {
+      const m = path.match(/^presenca\/auditLog\/(\d+)\/(.+)$/);
+      if (m) auditLog[`${m[1]}_${m[2]}`] = val;
+    });
+    notify(`✓ Backfill: ${countP} PRESENTE + ${countD} FOLGA DSR registrados em ${dates.length} dia(s)`);
+    refreshPresenca();
+    refreshDashboard();
+  } catch (err) {
+    console.error(err);
+    notify('Falha no backfill: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🩹 Preencher Presença'; }
+  }
 }
 
 function updateAtt(sel) {
