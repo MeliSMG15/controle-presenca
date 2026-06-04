@@ -5243,6 +5243,55 @@ function sendFaltaEmail(toEmail, toName, row, dateISO) {
   return emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params);
 }
 
+// Constrói os params pro email consolidado do supervisor (1 email com todas as faltas do dia)
+function buildConsolidatedSupervisorParams(faltasList, dateISO) {
+  const dataBR = formatDate(dateISO);
+  const total = faltasList.length;
+  const baseUrl = (typeof window !== 'undefined' && window.location)
+    ? (window.location.origin + window.location.pathname)
+    : 'https://melismg15.github.io/controle-presenca/';
+
+  // Lista numerada de colaboradores com líder
+  const linhas = faltasList.map((f, i) => {
+    const nome  = (f.row['COLABORADOR']||'').trim();
+    const ldap  = (f.row['LDAP']||'').trim();
+    const cargo = (f.row['CARGO']||'').trim();
+    const lider = leaderDisplay(f.row);
+    return `${String(i+1).padStart(2,'0')}. ${nome} (LDAP: ${ldap||'—'} · ${cargo||'—'}) — Líder: ${lider}`;
+  }).join('\n');
+
+  const mensagem =
+    `Resumo consolidado de FALTAS INJUSTIFICADAS do dia ${dataBR}.\n` +
+    `Total: ${total} ocorrência(s).\n\n` +
+    `Colaboradores:\n${linhas}\n\n` +
+    `Por favor acompanhe as tratativas com cada líder responsável. ` +
+    `Acesse o sistema pra ver detalhes e aplicar MDs: ${baseUrl}`;
+
+  const ticket = `TKT-${dateISO.replace(/-/g,'')}-RESUMO`;
+
+  return {
+    to_email: SUPERVISOR_EMAIL,
+    to_name: SUPERVISOR_NAME,
+    colaborador: `${total} colaborador(es) com falta injustificada`,
+    ldap: '—',
+    cargo: '—',
+    escala: '—',
+    ciclo: '—',
+    rota: '—',
+    empresa: 'Múltiplos',
+    id_groot: '—',
+    data_falta: dataBR,
+    lider: 'Múltiplos líderes (ver lista)',
+    mensagem,
+    ticket,
+    unidade: 'SMG15',
+    solicitante: 'acre.gomes@mercadolivre.com',
+    aprovador:   SUPERVISOR_EMAIL,
+    link_md: baseUrl,
+    sent_at: new Date().toLocaleString('pt-BR', { hour12: false }) + ' (BRT)'
+  };
+}
+
 // Processa faltas injustificadas MELI do dia anterior e dispara os emails,
 // deduplicando no Firebase em presenca/emailsSent/{date}/{idx}.
 // opts.force = true  → ignora horário e deduplicação (botão de teste com dados reais)
@@ -5261,31 +5310,54 @@ async function processYesterdayFaltas(opts = {}) {
     } catch (e) { console.warn('[email] falha lendo flag', e); return; }
   }
 
-  let enviados = 0, falhas = 0;
+  // 1. Coleta TODAS as faltas injustificadas MELI de ontem (não filtra por sentMap ainda)
+  const allFaltas = [];
   for (let idx = 0; idx < allData.length; idx++) {
     const row = allData[idx];
     if (!row || !isMeli(row)) continue;
     const att = getAtt(row, dateISO).toUpperCase();
     if (att !== 'INJUSTIFICADA') continue;
-    if (!force && sentMap[idx]) continue;                  // já enviou
+    allFaltas.push({ idx, row });
+  }
 
+  let enviados = 0, falhas = 0;
+
+  // 2. Email individual pra cada líder (com dedup por idx)
+  for (const { idx, row } of allFaltas) {
+    if (!force && sentMap[idx]) continue;
     const lEmail = leaderEmail(row);
     const lName  = (row['LÍDER'] || '').trim();
     try {
-      const tasks = [];
-      if (lEmail) tasks.push(sendFaltaEmail(lEmail, lName, row, dateISO));
-      tasks.push(sendFaltaEmail(SUPERVISOR_EMAIL, SUPERVISOR_NAME, row, dateISO));
-      await Promise.all(tasks);
+      if (lEmail) await sendFaltaEmail(lEmail, lName, row, dateISO);
       await db.ref(`presenca/emailsSent/${dateISO}/${idx}`).set({
-        at: Date.now(), leader: lEmail || null, supervisor: SUPERVISOR_EMAIL, forced: force || null
+        at: Date.now(), leader: lEmail || null, forced: force || null
       });
       enviados++;
-      console.log('[email] enviado para', row['COLABORADOR'], '→', lEmail, SUPERVISOR_EMAIL);
+      console.log('[email] enviado para líder', row['COLABORADOR'], '→', lEmail);
     } catch (e) {
       falhas++;
       console.error('[email] falha enviando para', row['COLABORADOR'], e);
     }
   }
+
+  // 3. Email consolidado pro supervisor (1 só por dia, com TODAS as faltas)
+  const supSent = !force && !!sentMap._supervisor;
+  if (!supSent && allFaltas.length > 0 && typeof emailjs !== 'undefined') {
+    try {
+      const params = buildConsolidatedSupervisorParams(allFaltas, dateISO);
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params);
+      await db.ref(`presenca/emailsSent/${dateISO}/_supervisor`).set({
+        at: Date.now(),
+        count: allFaltas.length,
+        forced: force || null,
+        collaborators: allFaltas.map(f => f.row['COLABORADOR'] || '')
+      });
+      console.log('[email] consolidado pro supervisor enviado:', allFaltas.length, 'falta(s)');
+    } catch (e) {
+      console.error('[email] supervisor consolidado falhou', e);
+    }
+  }
+
   return { enviados, falhas };
 }
 
