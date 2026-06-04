@@ -1283,6 +1283,7 @@ table.esc-cal td { position:relative; }
           <span class="table-title">Registro do Dia</span>
           <button class="btn btn-ghost" id="btn-aplicar-md" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="openMdModal()">⚠ Aplicar MD</button>
           <button class="btn btn-ghost" id="btn-import-csv" style="border-color:rgba(52,211,153,0.4);color:#34d399;font-size:12px;padding:6px 12px;display:none" onclick="openImportModal()">↑ Importar CSV</button>
+          <button class="btn btn-ghost" id="btn-backfill-pres" style="border-color:rgba(52,131,250,0.4);color:#3483FA;font-size:12px;padding:6px 12px;display:none" onclick="backfillPresencaRange()" title="Marca PRESENTE pra todos sem registro no intervalo (respeitando DSR e ignorando Part Time)">🩹 Preencher Presença</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="pres-count">0 colaboradores</span>
@@ -1868,6 +1869,9 @@ function getEffectiveAtt(row, date) {
   if (isPartTime(row)) return '';
   // Default PRESENTE só pra HOJE — passado e futuro ficam vazios (futuro só mostra FOLGA DSR planejada)
   if (date !== today()) return '';
+  // Não aplica default em sábado/domingo — só os DSRs planejados pela escala aparecem
+  const dow = new Date(date + 'T12:00:00').getDay();   // 0=Dom, 6=Sáb
+  if (dow === 0 || dow === 6) return '';
   return 'PRESENTE';
 }
 
@@ -2073,6 +2077,9 @@ function applyDashboardVisibility() {
   if (importBtn) importBtn.style.display = allowed ? '' : 'none';
   const updEscBtn = document.getElementById('btn-update-escalas');
   if (updEscBtn) updEscBtn.style.display = allowed ? '' : 'none';
+  // Botão de backfill é exclusivo do admin (acre.gomes@mercadolivre.com)
+  const bfBtn = document.getElementById('btn-backfill-pres');
+  if (bfBtn) bfBtn.style.display = isAdmin() ? '' : 'none';
 }
 
 // ── Presença em tempo real (quem está online) ──
