@@ -1255,6 +1255,12 @@ table.esc-cal td { position:relative; }
         </select>
       </div>
       <div class="filter-group">
+        <label>📆 Escala</label>
+        <select id="pres-escala" onchange="refreshPresenca()">
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <div class="filter-group">
         <label>🔍 Buscar</label>
         <div class="search-wrap">
           <span class="search-icon">🔍</span>
@@ -1345,6 +1351,12 @@ table.esc-cal td { position:relative; }
         <label>🎯 Cargo</label>
         <select id="col-cargo" onchange="refreshColaboradores()">
           <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>📆 Escala</label>
+        <select id="col-escala" onchange="refreshColaboradores()">
+          <option value="">Todas</option>
         </select>
       </div>
       <div class="filter-group">
@@ -2303,6 +2315,9 @@ function initFilters() {
   });
   ['dash-ciclo','col-ciclo','pres-ciclo','esc-ciclo'].forEach(id => populateSelect(id, ciclos));
   ['dash-cargo','col-cargo'].forEach(id => populateSelect(id, cargos));
+  // Escalas distintas (A, B, C, DOM, SEG, ...)
+  const escalas = getUniques('ESCALA');
+  ['pres-escala','col-escala'].forEach(id => populateSelect(id, escalas));
   // Empresas TEMP (todas as EMPRESAs distintas que não são MELI nem PART TIME)
   const tempEmpresas = [...new Set(
     allData
@@ -3733,10 +3748,14 @@ function refreshPresenca() {
   const ciclo = document.getElementById('pres-ciclo').value;
   const search = document.getElementById('pres-search').value.toLowerCase();
   const attFilter = document.getElementById('pres-att-filter').value;
+  const escala = (document.getElementById('pres-escala')||{}).value || '';
 
   let rows = getFilteredData(team, status, lider, ciclo, '');
   if (empresaTemp) {
     rows = rows.filter(r => isTemp(r) && (r['EMPRESA']||'').trim().toUpperCase() === empresaTemp.toUpperCase());
+  }
+  if (escala) {
+    rows = rows.filter(r => (r['ESCALA']||'').trim().toUpperCase() === escala.toUpperCase());
   }
   if (search) rows = rows.filter(r => (r['COLABORADOR']||'').toLowerCase().includes(search) || (r['LDAP']||'').toLowerCase().includes(search));
   // Filtro de status (PRESENTE/INJUSTIFICADA/etc) — em modo intervalo, mantém quem teve esse status em qualquer dia
@@ -4131,9 +4150,13 @@ function refreshColaboradores() {
   const lider = document.getElementById('col-lider').value;
   const ciclo = document.getElementById('col-ciclo').value;
   const cargo = document.getElementById('col-cargo').value;
+  const escala = (document.getElementById('col-escala')||{}).value || '';
   const search = document.getElementById('col-search').value.toLowerCase();
 
   let rows = getFilteredData(team, status, lider, ciclo, cargo);
+  if (escala) {
+    rows = rows.filter(r => (r['ESCALA']||'').trim().toUpperCase() === escala.toUpperCase());
+  }
   if (search) rows = rows.filter(r =>
     (r['COLABORADOR']||'').toLowerCase().includes(search) ||
     (r['LDAP']||'').toLowerCase().includes(search) ||
