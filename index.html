@@ -2293,6 +2293,24 @@ function getUniques(field) {
   return [...new Set(allData.map(r => (r[field] || '').trim()).filter(v => v && v !== 'nan'))].sort();
 }
 
+// Normaliza valor de escala: uppercase + remove espaços ao redor de vírgulas
+function _normEscalaValue(v) {
+  const t = (v || '').trim().toUpperCase();
+  if (!t) return '';
+  if (t.includes(',')) return t.split(',').map(x => x.trim()).filter(Boolean).join(',');
+  return t;
+}
+
+// Lista de escalas distintas (já normalizadas, sem duplicatas de case ou espaçamento)
+function getUniqueEscalas() {
+  const set = new Set();
+  allData.forEach(r => {
+    const v = _normEscalaValue(r['ESCALA']);
+    if (v && v !== 'NAN') set.add(v);
+  });
+  return [...set].sort();
+}
+
 function populateSelect(selId, values, addAll=true) {
   const sel = document.getElementById(selId);
   if (!sel) return;
@@ -2315,8 +2333,8 @@ function initFilters() {
   });
   ['dash-ciclo','col-ciclo','pres-ciclo','esc-ciclo'].forEach(id => populateSelect(id, ciclos));
   ['dash-cargo','col-cargo'].forEach(id => populateSelect(id, cargos));
-  // Escalas distintas (A, B, C, DOM, SEG, ...)
-  const escalas = getUniques('ESCALA');
+  // Escalas distintas — normalizadas (uppercase + sem espaços extras)
+  const escalas = getUniqueEscalas();
   ['pres-escala','col-escala'].forEach(id => populateSelect(id, escalas));
   // Empresas TEMP (todas as EMPRESAs distintas que não são MELI nem PART TIME)
   const tempEmpresas = [...new Set(
@@ -3755,7 +3773,8 @@ function refreshPresenca() {
     rows = rows.filter(r => isTemp(r) && (r['EMPRESA']||'').trim().toUpperCase() === empresaTemp.toUpperCase());
   }
   if (escala) {
-    rows = rows.filter(r => (r['ESCALA']||'').trim().toUpperCase() === escala.toUpperCase());
+    const want = _normEscalaValue(escala);
+    rows = rows.filter(r => _normEscalaValue(r['ESCALA']) === want);
   }
   if (search) rows = rows.filter(r => (r['COLABORADOR']||'').toLowerCase().includes(search) || (r['LDAP']||'').toLowerCase().includes(search));
   // Filtro de status (PRESENTE/INJUSTIFICADA/etc) — em modo intervalo, mantém quem teve esse status em qualquer dia
@@ -4155,7 +4174,8 @@ function refreshColaboradores() {
 
   let rows = getFilteredData(team, status, lider, ciclo, cargo);
   if (escala) {
-    rows = rows.filter(r => (r['ESCALA']||'').trim().toUpperCase() === escala.toUpperCase());
+    const want = _normEscalaValue(escala);
+    rows = rows.filter(r => _normEscalaValue(r['ESCALA']) === want);
   }
   if (search) rows = rows.filter(r =>
     (r['COLABORADOR']||'').toLowerCase().includes(search) ||
