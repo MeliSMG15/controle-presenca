@@ -1386,6 +1386,7 @@ table.esc-cal td { position:relative; }
         <div style="display:flex;gap:8px;align-items:center">
           <span class="table-count" id="col-count">0 colaboradores</span>
           <button class="btn btn-ghost" id="btn-update-escalas" onclick="openEscalaUpdate()" style="font-size:12px;padding:5px 12px;color:#34d399;border-color:rgba(52,211,153,0.4);display:none">🔄 Atualizar Escalas</button>
+          <button class="btn btn-ghost" id="btn-update-pt" onclick="openPartTimeUpdate()" style="font-size:12px;padding:5px 12px;color:#22d3ee;border-color:rgba(34,211,238,0.4);display:none">🔄 Atualizar Part Time</button>
           <button class="btn btn-csv" onclick="exportCSV()" style="font-size:12px;padding:5px 12px">⬇ CSV</button>
         </div>
       </div>
@@ -2089,6 +2090,8 @@ function applyDashboardVisibility() {
   if (importBtn) importBtn.style.display = allowed ? '' : 'none';
   const updEscBtn = document.getElementById('btn-update-escalas');
   if (updEscBtn) updEscBtn.style.display = allowed ? '' : 'none';
+  const updPtBtn = document.getElementById('btn-update-pt');
+  if (updPtBtn) updPtBtn.style.display = allowed ? '' : 'none';
   // Botão de backfill é exclusivo do admin (acre.gomes@mercadolivre.com)
   const bfBtn = document.getElementById('btn-backfill-pres');
   if (bfBtn) bfBtn.style.display = isAdmin() ? '' : 'none';
@@ -4388,6 +4391,118 @@ let disciplinares = {};
 let _importPayload = null;   // { updates: {path: value}, stats: {...}, unmatched: [...] }
 
 // ── Atualizar Escalas via escalas.csv (apenas o campo ESCALA) ──
+// ── Atualizar Part Time via part-time.csv (LÍDER + ESCALA) ──
+async function openPartTimeUpdate() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode atualizar')) return;
+  let csv;
+  try {
+    const resp = await fetch('part-time.csv', { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    csv = await resp.text();
+  } catch (e) {
+    notify('Falha ao carregar part-time.csv: ' + (e.message || e), 'error');
+    return;
+  }
+  applyPartTimeCsv(csv);
+}
+
+function applyPartTimeCsv(csvText) {
+  const rows = parseCsv(csvText);
+  if (!rows.length) { notify('CSV vazio', 'error'); return; }
+
+  // Index allData por nome normalizado
+  const byName = new Map();
+  allData.forEach((r, idx) => {
+    const k = _normName(r['COLABORADOR']);
+    if (k) byName.set(k, idx);
+  });
+
+  const updates = {};
+  const matched = [];      // { idx, nome, oldLider, newLider, oldEscala, newEscala }
+  const unmatched = [];    // nomes do CSV que não casaram
+  const setIdxs = new Set(); // idxs casados (pra calcular órfãos depois)
+
+  // Processa cada linha do CSV
+  rows.forEach(row => {
+    if (!row || !row[0]) return;
+    const nome = row[0].trim();
+    const rawEscala = (row[1] || '').trim();   // ex: SAB-DOM-SEG
+    const ciclo = (row[2] || '').trim().toUpperCase();   // AM / PM
+    const key = _normName(nome);
+    if (!key) return;
+    const idx = byName.get(key);
+    if (idx === undefined) {
+      unmatched.push(nome);
+      return;
+    }
+    setIdxs.add(idx);
+
+    // Converte SAB-DOM-SEG → SAB,DOM,SEG
+    const newEscala = _normEscalaValue(rawEscala.replace(/-/g, ','));
+    // LÍDER conforme ciclo
+    const newLider = ciclo === 'PM' ? 'LEANDRO' : (ciclo === 'AM' ? 'GUILHERME' : '');
+    if (!newLider) {
+      unmatched.push(nome + ' (ciclo inválido: ' + ciclo + ')');
+      return;
+    }
+
+    const oldLider  = (allData[idx]['LÍDER']  || '').trim();
+    const oldEscala = (allData[idx]['ESCALA'] || '').trim();
+    const liderChanged  = oldLider.toUpperCase()  !== newLider;
+    const escalaChanged = _normEscalaValue(oldEscala) !== newEscala;
+    if (!liderChanged && !escalaChanged) return;  // nada muda
+
+    if (liderChanged)  updates[`presenca/data/${idx}/LÍDER`]  = newLider;
+    if (escalaChanged) updates[`presenca/data/${idx}/ESCALA`] = newEscala;
+    matched.push({ idx, nome: allData[idx]['COLABORADOR'], oldLider, newLider, oldEscala, newEscala });
+  });
+
+  // Órfãos: Part Time ATIVOS que NÃO estão na lista → LÍDER = "verificar"
+  const orphans = [];
+  allData.forEach((r, idx) => {
+    if (!r || !isPartTime(r) || !isActive(r)) return;
+    if (setIdxs.has(idx)) return;
+    const cur = (r['LÍDER'] || '').trim();
+    if (cur.toLowerCase() === 'verificar') return;
+    updates[`presenca/data/${idx}/LÍDER`] = 'verificar';
+    orphans.push({ idx, nome: r['COLABORADOR'], oldLider: cur });
+  });
+
+  _importPayload = { updates };
+  _lastCsvText = null;
+
+  const total = Object.keys(updates).length;
+  const host = document.getElementById('import-preview');
+  document.getElementById('modal-import').classList.add('open');
+  document.getElementById('import-file').value = '';
+  document.getElementById('btn-confirm-import').style.display = total > 0 ? '' : 'none';
+  const replaceBtn = document.getElementById('btn-replace-base');
+  if (replaceBtn) replaceBtn.style.display = 'none';
+
+  const groupRows = (arr) => arr.map(m => {
+    const parts = [];
+    if (m.oldLider !== m.newLider)   parts.push(`<span style="color:var(--text3)">Líder:</span> ${m.oldLider||'(vazio)'} → <span style="color:#22d3ee">${m.newLider}</span>`);
+    if (_normEscalaValue(m.oldEscala) !== m.newEscala) parts.push(`<span style="color:var(--text3)">Escala:</span> ${m.oldEscala||'(vazio)'} → <span style="color:#34d399">${m.newEscala}</span>`);
+    return `<div style="padding:4px 0;border-bottom:1px dashed var(--border)">${m.nome}<br><small>${parts.join(' · ')}</small></div>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="font-weight:700;margin-bottom:8px">🔄 Atualização Part Time (LÍDER + ESCALA)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+        <div>📋 Linhas no CSV: <strong>${rows.length}</strong></div>
+        <div>✓ Casados na base: <strong style="color:#34d399">${setIdxs.size}</strong></div>
+        <div>♻ Vão mudar (LÍDER/ESCALA): <strong style="color:var(--yellow)">${matched.length}</strong></div>
+        <div>⚠ PT ativos fora da lista → "verificar": <strong style="color:${orphans.length?'#f87171':'var(--text3)'}">${orphans.length}</strong></div>
+        <div>✗ Não casados do CSV: <strong style="color:${unmatched.length?'#f87171':'var(--text3)'}">${unmatched.length}</strong></div>
+        <div>Total writes: <strong style="color:var(--accent2)">${total}</strong></div>
+      </div>
+      ${matched.length ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:var(--yellow)">Ver mudanças (${matched.length})</summary><div style="max-height:240px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${groupRows(matched)}</div></details>` : ''}
+      ${orphans.length ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:#f87171">PT ativos sem match (→ verificar) (${orphans.length})</summary><div style="max-height:200px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${orphans.map(o => `${o.nome} <span style="color:var(--text3)">— atual: ${o.oldLider||'(vazio)'}</span>`).join('<br>')}</div></details>` : ''}
+      ${unmatched.length ? `<details style="margin-top:10px;font-size:12px"><summary style="cursor:pointer;color:#f87171">Não casados do CSV (${unmatched.length})</summary><div style="max-height:160px;overflow:auto;padding:8px;background:var(--surface);border-radius:6px;margin-top:6px;font-family:'DM Mono',monospace;font-size:11px">${unmatched.join('<br>')}</div></details>` : ''}
+    </div>`;
+}
+
 async function openEscalaUpdate() {
   if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode atualizar escalas')) return;
   let csv;
