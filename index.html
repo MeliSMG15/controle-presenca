@@ -3642,9 +3642,25 @@ function runCompare() {
 }
 
 function renderFaltasInjustificadasRanking(filtered) {
-  const year = String(new Date().getFullYear());
+  // Respeita o filtro de data do Dashboard (De/Até/Semana). Se nenhum estiver setado, usa o ano corrente.
+  const dateFrom = (document.getElementById('dash-date-from')||{}).value || '';
+  const dateTo   = (document.getElementById('dash-date-to')||{}).value || '';
+  const periodDates = dateRangeList(dateFrom, dateTo);
+  const hasPeriod   = periodDates.length > 0;
+  const periodSet   = new Set(periodDates);
+  const year        = String(new Date().getFullYear());
+
+  // Rótulo do período (mostrado no header da tabela)
   const yearEl = document.getElementById('dash-falta-year');
-  if (yearEl) yearEl.textContent = year;
+  if (yearEl) {
+    if (!hasPeriod) {
+      yearEl.textContent = year;
+    } else if (periodDates.length === 1) {
+      yearEl.textContent = formatDate(periodDates[0]);
+    } else {
+      yearEl.textContent = `${formatDate(periodDates[0])} a ${formatDate(periodDates[periodDates.length-1])} · ${periodDates.length} dia(s)`;
+    }
+  }
 
   const ranking = [];
   filtered.forEach(r => {
@@ -3652,8 +3668,13 @@ function renderFaltasInjustificadasRanking(filtered) {
     let count = 0;
     let last = '';
     Object.keys(att).forEach(d => {
-      if (!d.startsWith(year + '-')) return;
       if ((att[d] || '').trim().toUpperCase() !== 'INJUSTIFICADA') return;
+      // Em modo "sem período" usa o ano corrente (comportamento anterior)
+      if (!hasPeriod) {
+        if (!d.startsWith(year + '-')) return;
+      } else {
+        if (!periodSet.has(d)) return;
+      }
       count++;
       if (d > last) last = d;
     });
@@ -3665,7 +3686,7 @@ function renderFaltasInjustificadasRanking(filtered) {
   const totalFaltas = ranking.reduce((s,x) => s + x.count, 0);
   if (countEl) countEl.textContent = `${ranking.length} colaborador(es) — ${totalFaltas} falta(s)`;
 
-  // Breakdown: por Time / Líder / Ciclo
+  // Breakdown: por Time / Líder / Ciclo (com % sobre o total de faltas no período)
   function teamLabel(r) {
     if (isMeli(r)) return 'MELI';
     if (isPartTime(r)) return 'PART TIME';
@@ -3681,20 +3702,24 @@ function renderFaltasInjustificadasRanking(filtered) {
       m.set(k, entry);
     });
     return [...m.entries()]
-      .sort((a,b) => b[1].ofensores - a[1].ofensores || b[1].faltas - a[1].faltas || a[0].localeCompare(b[0]));
+      .sort((a,b) => b[1].faltas - a[1].faltas || b[1].ofensores - a[1].ofensores || a[0].localeCompare(b[0]));
   }
   function renderBreakdown(elId, rows) {
     const el = document.getElementById(elId);
     if (!el) return;
     if (!rows.length) { el.innerHTML = '<div class="fb-empty">—</div>'; return; }
-    el.innerHTML = rows.map(([k, v]) =>
-      `<div class="fb-row">
+    el.innerHTML = rows.map(([k, v]) => {
+      const pct = totalFaltas > 0 ? (v.faltas / totalFaltas * 100) : 0;
+      const pctStr = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
+      return `<div class="fb-row">
         <span class="fb-row-name">${k}</span>
         <span class="fb-row-vals">
           <span class="fb-pp">${v.ofensores} ofensor${v.ofensores>1?'es':''}</span>
           <span class="fb-tot">${v.faltas} falta${v.faltas>1?'s':''}</span>
+          <span style="font-family:'DM Mono',monospace;color:#f87171;font-weight:700;min-width:42px;text-align:right">${pctStr}%</span>
         </span>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
   renderBreakdown('fb-team',  aggregate(teamLabel));
   renderBreakdown('fb-lider', aggregate(r => leaderDisplay(r).toUpperCase()));
@@ -3703,11 +3728,12 @@ function renderFaltasInjustificadasRanking(filtered) {
   const tbody = document.getElementById('dash-falta-body');
   if (!tbody) return;
   if (!ranking.length) {
+    const periodLabel = !hasPeriod ? year : (periodDates.length === 1 ? formatDate(periodDates[0]) : 'no período selecionado');
     ['fb-team','fb-lider','fb-ciclo'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.innerHTML = '<div class="fb-empty">Sem ofensores em ' + year + '</div>';
+      if (el) el.innerHTML = '<div class="fb-empty">Sem ofensores ' + (hasPeriod ? periodLabel : 'em ' + year) + '</div>';
     });
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="icon">✅</div>Nenhuma falta injustificada em ' + year + '</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="icon">✅</div>Nenhuma falta injustificada ' + (hasPeriod ? periodLabel : 'em ' + year) + '</div></td></tr>';
     return;
   }
   // Helper: contagem + detalhamento por MD (com líder e data de aplicação)
