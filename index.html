@@ -1150,7 +1150,8 @@ table.esc-cal td { position:relative; }
         </select>
       </div>
       <button class="btn btn-ghost" onclick="clearDashFilters()">✕ Limpar</button>
-      <button class="btn btn-primary" onclick="openCompareModal()" style="margin-left:auto">📊 Analisar comparação</button>
+      <button class="btn btn-ghost" id="btn-rimes" onclick="openRimesModal()" style="margin-left:auto;border-color:rgba(255,230,0,0.45);color:var(--meli);display:none">📋 RIMES</button>
+      <button class="btn btn-primary" onclick="openCompareModal()">📊 Analisar comparação</button>
     </div>
 
     <div class="stats-grid stats-grid-hc" id="dash-stats-hc"></div>
@@ -1561,6 +1562,24 @@ table.esc-cal td { position:relative; }
 </div>
 
 <!-- MODAL: COMPARAR PERÍODOS -->
+<!-- MODAL: RIMES (admin only — resumo por categoria/time por dia) -->
+<div class="modal-overlay" id="modal-rimes">
+  <div class="modal" style="width:min(90vw,1100px);max-height:90vh;overflow:auto">
+    <div class="modal-title">📋 RIMES — Resumo diário</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Tabela pronta pra copiar e colar no RIMES. Usa o intervalo De/Até e filtros do Dashboard. Apenas colaboradores ATIVOS.</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+      <button class="btn btn-primary" onclick="renderRimesTable()">🔄 Atualizar</button>
+      <button class="btn btn-ghost" onclick="copyRimesTable()">📋 Copiar (TSV pra Excel)</button>
+      <span id="rimes-info" style="font-size:12px;color:var(--text3)"></span>
+    </div>
+    <div id="rimes-table-host" style="overflow:auto"></div>
+    <div class="modal-actions">
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="closeRimesModal()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-compare">
   <div class="modal cmp-modal" id="modal-compare-inner" style="width:min(85vw,840px);max-height:86vh;overflow:auto">
     <div class="modal-title">📊 Análise de Comparação</div>
@@ -2095,6 +2114,9 @@ function applyDashboardVisibility() {
   // Botão de backfill é exclusivo do admin (acre.gomes@mercadolivre.com)
   const bfBtn = document.getElementById('btn-backfill-pres');
   if (bfBtn) bfBtn.style.display = isAdmin() ? '' : 'none';
+  // Botão RIMES — também exclusivo do admin
+  const rimesBtn = document.getElementById('btn-rimes');
+  if (rimesBtn) rimesBtn.style.display = isAdmin() ? '' : 'none';
 }
 
 // ── Presença em tempo real (quem está online) ──
@@ -2888,6 +2910,128 @@ function _renderForecastChartLegacy_REMOVED(filtered) {
       }
     },
     plugins: [todayDivider]
+  });
+}
+
+// ── RIMES — Resumo diário pra copiar pro RIMES ──
+function openRimesModal() {
+  if (!isAdmin()) { notify('Acesso restrito ao admin', 'error'); return; }
+  document.getElementById('modal-rimes').classList.add('open');
+  renderRimesTable();
+}
+function closeRimesModal() {
+  document.getElementById('modal-rimes').classList.remove('open');
+}
+
+// Estrutura ordenada: 6 categorias × 3 times (MELI, PART TIME, TEMP) = 18 linhas
+const RIMES_CATEGORIES = [
+  { key: 'PRESENCA',         label: 'PRESENÇA',         statuses: ['PRESENTE'] },
+  { key: 'JUSTIFICADA',      label: 'JUSTIFICADA',      statuses: ['JUSTIFICADA'] },
+  { key: 'INJUSTIFICADA',    label: 'INJUSTIFICADA',    statuses: ['INJUSTIFICADA'] },
+  { key: 'FOLGA_ADICIONAIS', label: 'FOLGA ADICIONAIS', statuses: ['BANCO DE HORAS','ABONO FRETADO/VOUCHER'] },
+  { key: 'FOLGA_DSR',        label: 'FOLGA DSR',        statuses: ['FOLGA DSR'] },
+  { key: 'FERIAS',           label: 'FÉRIAS',           statuses: ['FÉRIAS'] }
+];
+const RIMES_TEAMS = [
+  { key:'MELI',  label:'MELI',      match: r => isMeli(r) },
+  { key:'PT',    label:'PART TIME', match: r => isPartTime(r) },
+  { key:'TEMP',  label:'TEMPORARIO',match: r => isTemp(r) }
+];
+
+function _computeRimes() {
+  const team = document.getElementById('dash-team').value;
+  const status = document.getElementById('dash-status').value;
+  const lider = document.getElementById('dash-lider').value;
+  const ciclo = document.getElementById('dash-ciclo').value;
+  const cargo = document.getElementById('dash-cargo').value;
+  const filtered = getFilteredData(team, status, lider, ciclo, cargo).filter(isActive);
+
+  const dateFrom = document.getElementById('dash-date-from').value;
+  const dateTo   = document.getElementById('dash-date-to').value;
+  const dates    = dateRangeList(dateFrom, dateTo);
+
+  // result[catKey][teamKey][dateISO] = count
+  const result = {};
+  RIMES_CATEGORIES.forEach(c => {
+    result[c.key] = {};
+    RIMES_TEAMS.forEach(t => { result[c.key][t.key] = {}; dates.forEach(d => result[c.key][t.key][d] = 0); });
+  });
+
+  filtered.forEach(r => {
+    let team = null;
+    for (const t of RIMES_TEAMS) { if (t.match(r)) { team = t.key; break; } }
+    if (!team) return;
+    dates.forEach(d => {
+      const av = getEffectiveAtt(r, d).toUpperCase();
+      if (!av) return;
+      for (const c of RIMES_CATEGORIES) {
+        if (c.statuses.includes(av)) {
+          result[c.key][team][d]++;
+          break;
+        }
+      }
+    });
+  });
+
+  return { result, dates };
+}
+
+function renderRimesTable() {
+  const host = document.getElementById('rimes-table-host');
+  const info = document.getElementById('rimes-info');
+  const { result, dates } = _computeRimes();
+  if (!dates.length) {
+    host.innerHTML = '<div style="color:#f87171;padding:14px;background:rgba(239,68,68,0.08);border-radius:8px">Selecione um intervalo De/Até no Dashboard.</div>';
+    if (info) info.textContent = '';
+    return;
+  }
+  if (info) info.textContent = `${dates.length} dia(s): ${formatDate(dates[0])}${dates.length>1 ? ' a ' + formatDate(dates[dates.length-1]) : ''}`;
+
+  // Header com as datas
+  const dateHeaders = dates.map(d => `<th style="padding:8px 12px;background:#1a1a1a;color:#FFE600;font-family:'DM Mono',monospace;font-size:12px;border:1px solid #555;text-align:center;font-weight:700">${formatDate(d)}</th>`).join('');
+  let html = `<table id="rimes-table" style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif">
+    <thead><tr><th style="background:#1a1a1a;border:1px solid #555;padding:8px 12px"></th>${dateHeaders}</tr></thead>
+    <tbody>`;
+
+  RIMES_CATEGORIES.forEach((cat, idx) => {
+    if (idx > 0) {
+      // Linha separadora cinza (como na imagem)
+      html += `<tr><td colspan="${dates.length + 1}" style="background:#e5e5e5;height:8px;border:none"></td></tr>`;
+    }
+    RIMES_TEAMS.forEach(team => {
+      const label = `${team.label} ${cat.label}`;
+      const cells = dates.map(d => {
+        const v = result[cat.key][team.key][d];
+        return `<td style="padding:8px 12px;background:#fef7d5;color:#111;border:1px solid #d1c9a8;text-align:center;font-family:'DM Mono',monospace;font-size:13px;font-weight:600">${v}</td>`;
+      }).join('');
+      html += `<tr>
+        <td style="padding:8px 12px;background:#1a1a1a;color:#FFE600;font-weight:700;border:1px solid #555;font-size:12px;letter-spacing:0.5px;white-space:nowrap">${label}</td>
+        ${cells}
+      </tr>`;
+    });
+  });
+
+  html += '</tbody></table>';
+  host.innerHTML = html;
+}
+
+function copyRimesTable() {
+  const { result, dates } = _computeRimes();
+  if (!dates.length) { notify('Sem dados — selecione intervalo', 'error'); return; }
+  // TSV (tab-separated) — ideal pra colar em Excel/Sheets
+  let tsv = '\t' + dates.map(formatDate).join('\t') + '\n';
+  RIMES_CATEGORIES.forEach((cat, idx) => {
+    if (idx > 0) tsv += '\n';   // linha em branco entre blocos
+    RIMES_TEAMS.forEach(team => {
+      const label = `${team.label} ${cat.label}`;
+      const vals = dates.map(d => result[cat.key][team.key][d]);
+      tsv += label + '\t' + vals.join('\t') + '\n';
+    });
+  });
+  navigator.clipboard.writeText(tsv).then(() => {
+    notify('Tabela copiada — cola direto no Excel/Sheets ✓');
+  }).catch(err => {
+    notify('Falha ao copiar: ' + (err.message || err), 'error');
   });
 }
 
