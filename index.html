@@ -1289,6 +1289,7 @@ table.esc-cal td { position:relative; }
         <div style="display:flex;align-items:center;gap:12px">
           <span class="table-title">Registro do Dia</span>
           <button class="btn btn-ghost" id="btn-aplicar-md" style="border-color:rgba(239,68,68,0.4);color:#f87171;font-size:12px;padding:6px 12px;display:none" onclick="openMdModal()">⚠ Aplicar MD</button>
+          <button class="btn btn-ghost" id="btn-marcar-ferias" style="border-color:rgba(34,211,238,0.4);color:#22d3ee;font-size:12px;padding:6px 12px;display:none" onclick="openFeriasModal()">🌴 Marcar Férias</button>
           <button class="btn btn-ghost" id="btn-import-csv" style="border-color:rgba(52,211,153,0.4);color:#34d399;font-size:12px;padding:6px 12px;display:none" onclick="openImportModal()">↑ Importar CSV</button>
           <button class="btn btn-ghost" id="btn-backfill-pres" style="border-color:rgba(52,131,250,0.4);color:#3483FA;font-size:12px;padding:6px 12px;display:none" onclick="backfillPresencaRange()" title="Marca PRESENTE pra todos sem registro no intervalo (respeitando DSR e ignorando Part Time)">🩹 Preencher Presença</button>
         </div>
@@ -1677,6 +1678,47 @@ table.esc-cal td { position:relative; }
 </div>
 
 <!-- MEDIDA DISCIPLINAR MODAL -->
+<!-- MARCAR FÉRIAS MODAL -->
+<div class="modal-overlay" id="modal-ferias">
+  <div class="modal" style="width:560px">
+    <div class="modal-title">🌴 Marcar Férias</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Preenche FÉRIAS automaticamente em todos os dias do intervalo. Mantém DSR/folgas planejadas? Não — sobrescreve qualquer valor pra todos os dias do período.</div>
+
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Colaborador *</label>
+        <input type="text" id="ferias-colab-input" list="ferias-colab-list" placeholder="Comece a digitar o nome..." autocomplete="off" oninput="onFeriasColabChange()" onchange="onFeriasColabChange()">
+        <datalist id="ferias-colab-list"></datalist>
+        <div id="ferias-colab-hint" style="font-size:11px;color:var(--text3);margin-top:4px">Selecione um colaborador da lista.</div>
+      </div>
+      <div class="form-group">
+        <label>LDAP</label>
+        <input type="text" id="ferias-colab-ldap" readonly placeholder="Auto-preenchido">
+      </div>
+      <div class="form-group">
+        <label>Empresa</label>
+        <input type="text" id="ferias-colab-empresa" readonly placeholder="Auto-preenchido">
+      </div>
+      <div class="form-group">
+        <label>De *</label>
+        <input type="date" id="ferias-date-from" onchange="updateFeriasPreview()">
+      </div>
+      <div class="form-group">
+        <label>Até *</label>
+        <input type="date" id="ferias-date-to" onchange="updateFeriasPreview()">
+      </div>
+    </div>
+
+    <div id="ferias-preview" style="font-size:12px;color:var(--text2);margin-top:10px;padding:10px 14px;background:var(--surface2);border-radius:8px;display:none"></div>
+
+    <div class="modal-actions">
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="closeFeriasModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveFerias()">🌴 Aplicar Férias</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-md">
   <div class="modal" style="width:680px">
     <div class="modal-title">⚠️ Aplicar Medida Disciplinar</div>
@@ -2105,6 +2147,8 @@ function applyDashboardVisibility() {
     }
   }
   if (mdBtn) mdBtn.style.display = allowed ? '' : 'none';
+  const fBtn = document.getElementById('btn-marcar-ferias');
+  if (fBtn) fBtn.style.display = allowed ? '' : 'none';
   const importBtn = document.getElementById('btn-import-csv');
   if (importBtn) importBtn.style.display = allowed ? '' : 'none';
   const updEscBtn = document.getElementById('btn-update-escalas');
@@ -5131,6 +5175,124 @@ async function applyImport() {
     notify('Falha na importação: ' + (err.message || err), 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⤴ Aplicar mudanças'; }
+  }
+}
+
+// ── Marcar Férias ──
+function openFeriasModal() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode marcar férias')) return;
+  // popula datalist com nomes dos colaboradores ATIVOS
+  const dl = document.getElementById('ferias-colab-list');
+  dl.innerHTML = allData
+    .filter(r => isActive(r))
+    .map(r => `<option value="${(r['COLABORADOR']||'').replace(/"/g,'&quot;')}">`)
+    .join('');
+  ['ferias-colab-input','ferias-colab-ldap','ferias-colab-empresa']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const t = today();
+  document.getElementById('ferias-date-from').value = t;
+  document.getElementById('ferias-date-to').value = t;
+  document.getElementById('ferias-colab-hint').textContent = 'Selecione um colaborador da lista.';
+  document.getElementById('ferias-colab-hint').style.color = 'var(--text3)';
+  document.getElementById('ferias-preview').style.display = 'none';
+  document.getElementById('modal-ferias').classList.add('open');
+  setTimeout(() => document.getElementById('ferias-colab-input').focus(), 50);
+}
+function closeFeriasModal() {
+  document.getElementById('modal-ferias').classList.remove('open');
+}
+function onFeriasColabChange() {
+  const nome = document.getElementById('ferias-colab-input').value;
+  const hint = document.getElementById('ferias-colab-hint');
+  const idx = findColabByName(nome);
+  const fields = { 'ferias-colab-ldap': 'LDAP', 'ferias-colab-empresa': 'EMPRESA' };
+  if (idx === -1) {
+    Object.keys(fields).forEach(id => document.getElementById(id).value = '');
+    if (nome.trim()) {
+      hint.textContent = 'Colaborador não encontrado — escolha da lista.';
+      hint.style.color = '#f87171';
+    } else {
+      hint.textContent = 'Selecione um colaborador da lista.';
+      hint.style.color = 'var(--text3)';
+    }
+    updateFeriasPreview();
+    return;
+  }
+  const r = allData[idx];
+  Object.entries(fields).forEach(([id, key]) => {
+    document.getElementById(id).value = (r[key]||'').trim();
+  });
+  hint.textContent = '✓ Encontrado: ' + (r['COLABORADOR']||'');
+  hint.style.color = '#34d399';
+  updateFeriasPreview();
+}
+function updateFeriasPreview() {
+  const nome = document.getElementById('ferias-colab-input').value.trim();
+  const from = document.getElementById('ferias-date-from').value;
+  const to   = document.getElementById('ferias-date-to').value;
+  const prevBox = document.getElementById('ferias-preview');
+  const idx = findColabByName(nome);
+  if (idx === -1 || !from || !to) { prevBox.style.display = 'none'; return; }
+  const dates = dateRangeList(from, to);
+  if (!dates.length) { prevBox.style.display = 'none'; return; }
+  // Conta quantos dias já têm valor (vão ser sobrescritos)
+  const att = allData[idx].attendance || {};
+  const existing = dates.filter(d => att[d]).length;
+  prevBox.style.display = '';
+  prevBox.innerHTML = `Vai marcar <strong style="color:#22d3ee">FÉRIAS</strong> em <strong>${dates.length} dia(s)</strong> ` +
+    `(${formatDate(dates[0])} a ${formatDate(dates[dates.length-1])}).` +
+    (existing > 0 ? ` <span style="color:var(--yellow)">⚠ ${existing} dia(s) já tem outro registro e serão sobrescritos.</span>` : '');
+}
+async function saveFerias() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode marcar férias')) return;
+  const nome = document.getElementById('ferias-colab-input').value.trim();
+  const from = document.getElementById('ferias-date-from').value;
+  const to   = document.getElementById('ferias-date-to').value;
+  const hint = document.getElementById('ferias-colab-hint');
+
+  const idx = findColabByName(nome);
+  if (idx === -1) {
+    hint.textContent = 'Colaborador não encontrado — escolha da lista.';
+    hint.style.color = '#f87171';
+    return;
+  }
+  if (!from || !to) { notify('Informe De e Até', 'error'); return; }
+  const dates = dateRangeList(from, to);
+  if (!dates.length) { notify('Intervalo inválido', 'error'); return; }
+
+  const att = allData[idx].attendance || {};
+  const existing = dates.filter(d => att[d]).length;
+  if (existing > 0) {
+    if (!confirm(`Vai marcar FÉRIAS em ${dates.length} dia(s). ${existing} já tem outro registro e serão sobrescritos.\n\nConfirmar?`)) return;
+  }
+
+  const updates = {};
+  const auditUpdates = {};
+  const editor = getCurrentEditor() || 'DESCONHECIDO';
+  const email  = getCurrentEditorEmail() || null;
+  const at = Date.now();
+  dates.forEach(d => {
+    updates[`presenca/data/${idx}/attendance/${d}`] = 'FÉRIAS';
+    auditUpdates[`presenca/auditLog/${idx}/${d}`] = { val: 'FÉRIAS', by: editor, byEmail: email, at, ferias: true };
+  });
+
+  try {
+    const all = Object.assign({}, updates, auditUpdates);
+    await db.ref().update(all);
+    // Atualiza local
+    if (!allData[idx].attendance) allData[idx].attendance = {};
+    dates.forEach(d => { allData[idx].attendance[d] = 'FÉRIAS'; });
+    Object.entries(auditUpdates).forEach(([path, val]) => {
+      const m = path.match(/^presenca\/auditLog\/(\d+)\/(.+)$/);
+      if (m) auditLog[`${m[1]}_${m[2]}`] = val;
+    });
+    notify(`✓ FÉRIAS marcadas pra ${allData[idx]['COLABORADOR']} em ${dates.length} dia(s)`);
+    closeFeriasModal();
+    refreshPresenca();
+    refreshDashboard();
+  } catch (e) {
+    console.error(e);
+    notify('Falha ao salvar: ' + (e.message || e), 'error');
   }
 }
 
