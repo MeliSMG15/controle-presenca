@@ -2928,7 +2928,7 @@ const RIMES_CATEGORIES = [
   { key: 'PRESENCA',         label: 'PRESENÇA',         statuses: ['PRESENTE'] },
   { key: 'JUSTIFICADA',      label: 'JUSTIFICADA',      statuses: ['JUSTIFICADA'] },
   { key: 'INJUSTIFICADA',    label: 'INJUSTIFICADA',    statuses: ['INJUSTIFICADA'] },
-  { key: 'FOLGA_ADICIONAIS', label: 'FOLGA ADICIONAIS', statuses: ['BANCO DE HORAS','ABONO FRETADO/VOUCHER'] },
+  { key: 'FOLGA_ADICIONAIS', label: 'FOLGA ADICIONAIS', statuses: ['BANCO DE HORAS'] },
   { key: 'FOLGA_DSR',        label: 'FOLGA DSR',        statuses: ['FOLGA DSR'] },
   { key: 'FERIAS',           label: 'FÉRIAS',           statuses: ['FÉRIAS'] }
 ];
@@ -2944,7 +2944,9 @@ function _computeRimes() {
   const lider = document.getElementById('dash-lider').value;
   const ciclo = document.getElementById('dash-ciclo').value;
   const cargo = document.getElementById('dash-cargo').value;
-  const filtered = getFilteredData(team, status, lider, ciclo, cargo).filter(isActive);
+  const filtered = getFilteredData(team, status, lider, ciclo, cargo)
+    .filter(isActive)
+    .filter(r => (r['CARGO']||'').trim().toUpperCase() !== 'OP3');   // exclui OP3 do RIMES
 
   const dateFrom = document.getElementById('dash-date-from').value;
   const dateTo   = document.getElementById('dash-date-to').value;
