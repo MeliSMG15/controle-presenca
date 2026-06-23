@@ -856,6 +856,61 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Gestão de Férias ── */
+.fer-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: auto; }
+.fer-table { border-collapse: collapse; width: 100%; min-width: 1400px; font-size: 12px; }
+.fer-table thead tr.group-row th {
+  background: #1a2235; color: #e5e7eb;
+  border: 1px solid var(--border2);
+  padding: 8px 10px; font-weight: 800;
+  font-size: 11px; letter-spacing: 0.5px;
+}
+.fer-table thead tr.header-row th {
+  background: var(--surface3); color: var(--text2);
+  border: 1px solid var(--border);
+  padding: 8px 8px; font-weight: 700;
+  font-size: 10.5px; letter-spacing: 0.3px;
+}
+.fer-table tbody td {
+  border: 1px solid var(--border);
+  padding: 4px 6px; vertical-align: middle;
+}
+.fer-table tbody tr:nth-child(odd) td { background: var(--surface); }
+.fer-table tbody tr:nth-child(even) td { background: var(--surface2); }
+.fer-table tbody tr:hover td { background: var(--surface3); }
+.fer-table .col-nome { font-weight: 600; min-width: 220px; }
+.fer-table .col-nome small { display: block; font-size: 10px; color: var(--text3); font-weight: 500; }
+.fer-table .col-ciclo { min-width: 75px; text-align: center; }
+.fer-table .col-date { min-width: 110px; }
+.fer-table .col-qtd { min-width: 55px; text-align: center; font-family: 'DM Mono',monospace; font-weight: 700; }
+.fer-table .col-tipo { min-width: 145px; }
+.fer-table .col-status { min-width: 115px; }
+.fer-table input[type=date], .fer-table select {
+  width: 100%; padding: 4px 6px;
+  font-family: inherit; font-size: 11.5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text);
+}
+.fer-table input[type=date]:focus, .fer-table select:focus { outline: none; border-color: var(--accent); }
+.fer-pill {
+  display: inline-block; padding: 2px 10px;
+  border-radius: 12px; font-size: 11px; font-weight: 700;
+  font-family: 'Inter', sans-serif; letter-spacing: 0.2px;
+}
+.fer-pill-tipo.Ferias { background: rgba(34,211,238,0.15); color: #22d3ee; }
+.fer-pill-tipo.LCasa { background: rgba(248,113,113,0.15); color: #fca5a5; }
+.fer-pill-tipo.LMat  { background: rgba(236,72,153,0.18); color: #f9a8d4; }
+.fer-pill-tipo.LPat  { background: rgba(96,165,250,0.18); color: #93c5fd; }
+.fer-pill-tipo.INSS  { background: rgba(251,146,60,0.18); color: #fdba74; }
+.fer-pill-status.Pendente   { background: rgba(251,146,60,0.18); color: #fb923c; border:1px solid rgba(251,146,60,0.4); }
+.fer-pill-status.Agendado   { background: rgba(245,158,11,0.18); color: #fbbf24; border:1px solid rgba(245,158,11,0.4); }
+.fer-pill-status.Concluido { background: rgba(52,211,153,0.18); color: #34d399; border:1px solid rgba(52,211,153,0.4); }
+.fer-pill-status.Aprovado   { background: rgba(96,165,250,0.18); color: #93c5fd; border:1px solid rgba(96,165,250,0.4); }
+.fer-row-action { cursor: pointer; color: var(--red); background: transparent; border: 1px solid var(--border); padding: 3px 8px; border-radius: 5px; font-size: 11px; }
+.fer-row-action:hover { background: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.4); }
+.fer-empty-cell { color: var(--text3); text-align: center; font-style: italic; }
+
 /* ════════════════════════════════════════════════════════
    TEMA AZUL CLARO — ativado por body.theme-light-blue
    (Aplicado quando o usuário logado é nathalia.hsantos@mercadolivre.com)
@@ -1071,6 +1126,7 @@ table.esc-cal td { position:relative; }
     <button class="tab-btn" onclick="switchTab('presenca')">✅ Presença</button>
     <button class="tab-btn" onclick="switchTab('colaboradores')">👥 Colaboradores</button>
     <button class="tab-btn" onclick="switchTab('escala')">📆 Escala</button>
+    <button class="tab-btn" id="tab-ferias" onclick="switchTab('ferias')" style="display:none">🌴 Gestão de Férias</button>
   </div>
   <div class="topbar-right">
     <div class="topbar-online">
@@ -1444,6 +1500,58 @@ table.esc-cal td { position:relative; }
       <div style="font-size:11px;color:var(--text3);margin-bottom:10px">💡 Clique em qualquer célula para alternar entre T (trabalho) e DSR (folga). O ponto amarelo marca células ajustadas manualmente.</div>
       <div id="esc-cal-host"></div>
     </div>
+  </div>
+
+  <!-- GESTÃO DE FÉRIAS VIEW -->
+  <div class="view" id="view-ferias">
+    <div class="filters-bar">
+      <div class="filter-group">
+        <label>📂 Grupo</label>
+        <select id="fer-tab" onchange="setFeriasSubtab(this.value)">
+          <option value="lideranca">Liderança</option>
+          <option value="op3">OP3</option>
+          <option value="op2">OP2</option>
+          <option value="rep">REP (com Ciclo)</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>🔄 Ciclo (REP)</label>
+        <select id="fer-ciclo" onchange="renderFeriasTable()">
+          <option value="">Todos</option>
+          <option value="AM">AM</option>
+          <option value="PM">PM</option>
+          <option value="SD">SD</option>
+          <option value="XPT">XPT</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>● Status</label>
+        <select id="fer-status-filter" onchange="renderFeriasTable()">
+          <option value="">Todos</option>
+          <option value="Pendente">Pendente</option>
+          <option value="Agendado">Agendado</option>
+          <option value="Concluído">Concluído</option>
+          <option value="Aprovado">Aprovado</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>🔍 Buscar</label>
+        <input type="text" class="search-input" id="fer-search" placeholder="Nome..." oninput="renderFeriasTable()">
+      </div>
+      <div class="filter-group" style="margin-left:auto">
+        <label>&nbsp;</label>
+        <button class="btn btn-primary" id="btn-add-lideranca" onclick="addLiderancaPrompt()" style="display:none">+ Adicionar Liderança</button>
+      </div>
+    </div>
+
+    <div id="fer-info" style="background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.35);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#fca5a5">
+      <strong style="color:#f87171">⚠ Regras importantes:</strong><br>
+      • <em>Não tirar</em> férias em <strong>Novembro e Dezembro 2026</strong>.<br>
+      • <em>Não ter dois líderes</em> no mesmo período.<br>
+      • Meli permite vender até <strong>10 dias</strong> de férias.
+    </div>
+
+    <div id="fer-table-host"></div>
   </div>
 
 </div>
@@ -2147,6 +2255,13 @@ function applyDashboardVisibility() {
       if (view && view.classList.contains('active')) switchTab('presenca');
     }
   }
+  // Tab "Gestão de Férias" — mesma regra (TLs + supervisor + admin)
+  const tabF = document.getElementById('tab-ferias');
+  const viewF = document.getElementById('view-ferias');
+  if (tabF) {
+    tabF.style.display = allowed ? '' : 'none';
+    if (!allowed && viewF && viewF.classList.contains('active')) switchTab('presenca');
+  }
   if (mdBtn) mdBtn.style.display = allowed ? '' : 'none';
   const fBtn = document.getElementById('btn-marcar-ferias');
   if (fBtn) fBtn.style.display = allowed ? '' : 'none';
@@ -2425,12 +2540,13 @@ function switchTab(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
-  const idx = ['dashboard','presenca','colaboradores','escala'].indexOf(name);
+  const idx = ['dashboard','presenca','colaboradores','escala','ferias'].indexOf(name);
   document.querySelectorAll('.tab-btn')[idx].classList.add('active');
   if (name === 'dashboard') refreshDashboard();
   if (name === 'presenca') refreshPresenca();
   if (name === 'colaboradores') refreshColaboradores();
   if (name === 'escala') refreshEscala();
+  if (name === 'ferias') refreshFerias();
 }
 
 // ─────────────────────────────────────────
@@ -5647,6 +5763,13 @@ function listenFirebase() {
       refreshDashboard();
     }
   });
+  // Gestão de Férias
+  db.ref('presenca/gestaoFerias').on('value', snap => {
+    feriasData = snap.val() || {};
+    if (document.getElementById('view-ferias')?.classList.contains('active')) {
+      renderFeriasTable();
+    }
+  });
   // Audit log — quem alterou cada presença
   db.ref('presenca/auditLog').on('value', snap => {
     const v = snap.val() || {};
@@ -6237,6 +6360,224 @@ function sendTestEmail() {
     .then(() => notify('Email de teste enviado para ' + SUPERVISOR_EMAIL))
     .catch(err => { console.error(err); notify('Falha no envio: ' + (err.text || err.message || err), 'error'); })
     .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '✉ Teste'; } });
+}
+
+// ═════════════════════════════════════════════
+// GESTÃO DE FÉRIAS
+// ═════════════════════════════════════════════
+const FER_TIPOS    = ['Férias','Licença Casamento','Licença Maternidade','Licença Paternidade','INSS'];
+const FER_STATUS   = ['Pendente','Agendado','Concluído','Aprovado'];
+const FER_PERIODOS = 3;
+let feriasData = {};        // Firebase mirror — chave: 'colab_<idx>' ou 'lider_<auto>'
+let feriasSubtab = 'lideranca';
+
+function refreshFerias() {
+  setFeriasSubtab(document.getElementById('fer-tab').value || 'lideranca');
+}
+function setFeriasSubtab(v) {
+  feriasSubtab = v;
+  document.getElementById('fer-tab').value = v;
+  // Botão "Adicionar Liderança" só na sub-aba lideranca
+  document.getElementById('btn-add-lideranca').style.display = (v === 'lideranca' && canEdit()) ? '' : 'none';
+  // Filtro de ciclo só na sub-aba REP
+  document.querySelectorAll('#view-ferias .filter-group')[1].style.display = (v === 'rep') ? '' : 'none';
+  renderFeriasTable();
+}
+
+function _ferKey(type, idx) { return type + '_' + idx; }
+function _ferDays(di, df) {
+  if (!di || !df) return '';
+  const a = new Date(di + 'T12:00:00');
+  const b = new Date(df + 'T12:00:00');
+  if (isNaN(a) || isNaN(b)) return '';
+  const d = Math.floor((b - a) / 86400000) + 1;
+  return d > 0 ? d : '';
+}
+function _ferLabelTipo(t) {
+  if (t === 'Férias') return 'Ferias';
+  if (t === 'Licença Casamento') return 'LCasa';
+  if (t === 'Licença Maternidade') return 'LMat';
+  if (t === 'Licença Paternidade') return 'LPat';
+  if (t === 'INSS') return 'INSS';
+  return '';
+}
+function _ferLabelStatus(s) {
+  if (s === 'Concluído') return 'Concluido';
+  return s || '';
+}
+
+function _ferRowsForCurrentSubtab() {
+  // Retorna lista de { key, nome, ciclo (opc), lider (opc), data: feriasData[key] || null, manual: bool, idx? }
+  const out = [];
+  if (feriasSubtab === 'lideranca') {
+    // Pega entries com prefixo lider_
+    Object.entries(feriasData).forEach(([k, v]) => {
+      if (k.startsWith('lider_')) out.push({ key: k, nome: v.nome || '', manual: true, data: v });
+    });
+    out.sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  } else {
+    const wantCargos =
+      feriasSubtab === 'op3' ? ['OP3'] :
+      feriasSubtab === 'op2' ? ['OP2'] :
+      feriasSubtab === 'rep' ? ['REP1','REP2'] : [];
+    allData.forEach((r, idx) => {
+      if (!r || !isActive(r)) return;
+      const cargo = (r['CARGO']||'').trim().toUpperCase();
+      if (!wantCargos.includes(cargo)) return;
+      const key = _ferKey('colab', idx);
+      out.push({
+        key, nome: r['COLABORADOR']||'',
+        ciclo: (r['CICLO']||'').trim().toUpperCase(),
+        lider: r['LÍDER']||'',
+        manual: false, idx,
+        data: feriasData[key] || null
+      });
+    });
+    out.sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  }
+  return out;
+}
+
+function renderFeriasTable() {
+  const host = document.getElementById('fer-table-host');
+  const search = (document.getElementById('fer-search').value || '').trim().toLowerCase();
+  const statusFil = document.getElementById('fer-status-filter').value;
+  const cicloFil  = document.getElementById('fer-ciclo').value;
+
+  let rows = _ferRowsForCurrentSubtab();
+  if (search)    rows = rows.filter(r => (r.nome||'').toLowerCase().includes(search));
+  if (cicloFil && feriasSubtab === 'rep') rows = rows.filter(r => r.ciclo === cicloFil);
+  if (statusFil) {
+    rows = rows.filter(r => {
+      const periodos = (r.data && r.data.periodos) || [];
+      return periodos.some(p => p && p.status === statusFil);
+    });
+  }
+
+  const showCiclo = feriasSubtab === 'rep';
+  // Header
+  const groupHead = `
+    <tr class="group-row">
+      <th rowspan="2" class="col-nome">Nome${showCiclo ? '' : ''}</th>
+      ${showCiclo ? '<th rowspan="2" class="col-ciclo">Ciclo</th>' : ''}
+      ${Array.from({length: FER_PERIODOS}, (_,i) =>
+        `<th colspan="5">Período ${i+1}</th>`
+      ).join('')}
+      ${canEdit() && feriasSubtab === 'lideranca' ? '<th rowspan="2">Ação</th>' : ''}
+    </tr>`;
+  const subHead = `
+    <tr class="header-row">
+      ${Array.from({length: FER_PERIODOS}).map(() => `
+        <th class="col-date">Data Inicial</th>
+        <th class="col-date">Data Final</th>
+        <th class="col-qtd">Qtd</th>
+        <th class="col-tipo">Tipo</th>
+        <th class="col-status">Status</th>
+      `).join('')}
+    </tr>`;
+
+  // Body
+  let body;
+  if (!rows.length) {
+    const cols = 1 + (showCiclo ? 1 : 0) + FER_PERIODOS*5 + (canEdit() && feriasSubtab === 'lideranca' ? 1 : 0);
+    body = `<tr><td colspan="${cols}" class="fer-empty-cell" style="padding:30px">Nenhum colaborador encontrado.</td></tr>`;
+  } else {
+    body = rows.map(r => {
+      const periodos = (r.data && r.data.periodos) || [];
+      const cellsPeriodos = Array.from({length: FER_PERIODOS}, (_, i) => {
+        const p = periodos[i] || {};
+        const di = p.dataInicial || '';
+        const df = p.dataFinal || '';
+        const qtd = _ferDays(di, df);
+        const tipo = p.tipo || '';
+        const status = p.status || '';
+        const editable = canEdit();
+        if (!editable) {
+          return `<td class="col-date">${di ? formatDate(di) : '—'}</td>
+                  <td class="col-date">${df ? formatDate(df) : '—'}</td>
+                  <td class="col-qtd">${qtd || '—'}</td>
+                  <td class="col-tipo">${tipo ? `<span class="fer-pill fer-pill-tipo ${_ferLabelTipo(tipo)}">${tipo}</span>` : '—'}</td>
+                  <td class="col-status">${status ? `<span class="fer-pill fer-pill-status ${_ferLabelStatus(status)}">${status}</span>` : '—'}</td>`;
+        }
+        return `
+          <td class="col-date"><input type="date" value="${di}" onchange="updateFeriaPeriodo('${r.key}',${i},'dataInicial',this.value)"></td>
+          <td class="col-date"><input type="date" value="${df}" onchange="updateFeriaPeriodo('${r.key}',${i},'dataFinal',this.value)"></td>
+          <td class="col-qtd">${qtd || '—'}</td>
+          <td class="col-tipo">
+            <select onchange="updateFeriaPeriodo('${r.key}',${i},'tipo',this.value)">
+              <option value="">—</option>
+              ${FER_TIPOS.map(t => `<option value="${t}" ${t===tipo?'selected':''}>${t}</option>`).join('')}
+            </select>
+          </td>
+          <td class="col-status">
+            <select onchange="updateFeriaPeriodo('${r.key}',${i},'status',this.value)">
+              <option value="">—</option>
+              ${FER_STATUS.map(s => `<option value="${s}" ${s===status?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </td>`;
+      }).join('');
+
+      const cicloCell = showCiclo
+        ? `<td class="col-ciclo">${r.ciclo || '—'}</td>`
+        : '';
+      const nomeCell = r.manual
+        ? `<td class="col-nome">${r.nome}</td>`
+        : `<td class="col-nome">${r.nome}<small>${r.lider ? 'Líder: ' + r.lider : ''}</small></td>`;
+      const acaoCell = (canEdit() && feriasSubtab === 'lideranca')
+        ? `<td><button class="fer-row-action" onclick="removeLideranca('${r.key}', '${(r.nome||'').replace(/'/g,'')}')">🗑 Remover</button></td>`
+        : '';
+
+      return `<tr>${nomeCell}${cicloCell}${cellsPeriodos}${acaoCell}</tr>`;
+    }).join('');
+  }
+
+  host.innerHTML = `<div class="fer-wrap">
+    <table class="fer-table">
+      <thead>${groupHead}${subHead}</thead>
+      <tbody>${body}</tbody>
+    </table>
+  </div>`;
+}
+
+function updateFeriaPeriodo(key, i, field, value) {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode editar')) return;
+  feriasData[key] = feriasData[key] || {};
+  // Manter o nome em entradas manuais
+  if (key.startsWith('lider_') && !feriasData[key].nome) {
+    // Pega do allData ou do estado atual — se manual, deveria já existir
+  }
+  feriasData[key].periodos = feriasData[key].periodos || [];
+  feriasData[key].periodos[i] = feriasData[key].periodos[i] || {};
+  feriasData[key].periodos[i][field] = value || null;
+  db.ref(`presenca/gestaoFerias/${key}/periodos/${i}/${field}`).set(value || null)
+    .catch(e => notify('Falha ao salvar: ' + (e.message || e), 'error'));
+  // Re-render pra atualizar Qtd dias
+  if (field === 'dataInicial' || field === 'dataFinal') {
+    renderFeriasTable();
+  }
+}
+
+function addLiderancaPrompt() {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode adicionar')) return;
+  const nome = (prompt('Nome do líder a adicionar:') || '').trim();
+  if (!nome) return;
+  // Gera um id único
+  const key = 'lider_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  feriasData[key] = { nome, periodos: [] };
+  db.ref(`presenca/gestaoFerias/${key}`).set({ nome })
+    .then(() => { notify(`${nome} adicionado(a)`); renderFeriasTable(); })
+    .catch(e => notify('Falha: ' + (e.message || e), 'error'));
+}
+function removeLideranca(key, nome) {
+  if (!guardEdit('Modo leitura — só @' + ALLOWED_DOMAIN + ' pode remover')) return;
+  if (!confirm(`Remover ${nome} da Gestão de Férias? Isso apaga todos os períodos cadastrados.`)) return;
+  db.ref(`presenca/gestaoFerias/${key}`).remove()
+    .then(() => {
+      delete feriasData[key];
+      notify('Removido');
+      renderFeriasTable();
+    })
+    .catch(e => notify('Falha: ' + (e.message || e), 'error'));
 }
 
 function init() {
