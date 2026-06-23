@@ -1247,19 +1247,39 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
   border-color: #3483fa;
   box-shadow: 0 0 0 2px rgba(52, 131, 250, 0.18);
 }
-/* Força <option> com fundo branco e texto escuro (corrige bug de herança) */
+/* Default: <option> com fundo branco e texto escuro (corrige bug de herança) */
 #view-ferias select option,
 #view-ferias .fer-table select option {
-  background-color: #ffffff !important;
-  color: #0f2547 !important;
+  background-color: #ffffff;
+  color: #0f2547;
   font-weight: 500;
 }
-#view-ferias select option:checked,
-#view-ferias .fer-table select option:checked {
-  background-color: #dbeafe !important;
-  color: #1e40af !important;
-  font-weight: 700;
-}
+
+/* ── Status: colore o select inteiro baseado no valor selecionado ── */
+#view-ferias .fer-table select.status-Pendente  { background-color: #fde2cf; color: #9a3412; border-color: #fbcfa5; font-weight: 700; }
+#view-ferias .fer-table select.status-Agendado  { background-color: #fef3c7; color: #92400e; border-color: #fcd97a; font-weight: 700; }
+#view-ferias .fer-table select.status-Concluido { background-color: #d1fae5; color: #065f46; border-color: #86efac; font-weight: 700; }
+#view-ferias .fer-table select.status-Aprovado  { background-color: #dbeafe; color: #1e40af; border-color: #93c5fd; font-weight: 700; }
+#view-ferias .fer-table select.status-Reprovado { background-color: #991b1b; color: #ffffff; border-color: #7f1d1d; font-weight: 700; }
+/* opções abertas do dropdown — colorem cada item */
+#view-ferias .fer-table option.opt-status-Pendente  { background-color: #fde2cf; color: #9a3412; font-weight: 700; }
+#view-ferias .fer-table option.opt-status-Agendado  { background-color: #fef3c7; color: #92400e; font-weight: 700; }
+#view-ferias .fer-table option.opt-status-Concluido { background-color: #d1fae5; color: #065f46; font-weight: 700; }
+#view-ferias .fer-table option.opt-status-Aprovado  { background-color: #dbeafe; color: #1e40af; font-weight: 700; }
+#view-ferias .fer-table option.opt-status-Reprovado { background-color: #991b1b; color: #ffffff; font-weight: 700; }
+
+/* ── Tipo: colore o select inteiro baseado no valor selecionado ── */
+#view-ferias .fer-table select.tipo-Ferias { background-color: #cffafe; color: #155e75; border-color: #67e8f9; font-weight: 700; }
+#view-ferias .fer-table select.tipo-LCasa  { background-color: #fee2e2; color: #991b1b; border-color: #fca5a5; font-weight: 700; }
+#view-ferias .fer-table select.tipo-LMat   { background-color: #fce7f3; color: #9d174d; border-color: #f9a8d4; font-weight: 700; }
+#view-ferias .fer-table select.tipo-LPat   { background-color: #dbeafe; color: #1e40af; border-color: #93c5fd; font-weight: 700; }
+#view-ferias .fer-table select.tipo-INSS   { background-color: #fed7aa; color: #9a3412; border-color: #fdba74; font-weight: 700; }
+/* opções do tipo */
+#view-ferias .fer-table option.opt-tipo-Ferias { background-color: #cffafe; color: #155e75; font-weight: 700; }
+#view-ferias .fer-table option.opt-tipo-LCasa  { background-color: #fee2e2; color: #991b1b; font-weight: 700; }
+#view-ferias .fer-table option.opt-tipo-LMat   { background-color: #fce7f3; color: #9d174d; font-weight: 700; }
+#view-ferias .fer-table option.opt-tipo-LPat   { background-color: #dbeafe; color: #1e40af; font-weight: 700; }
+#view-ferias .fer-table option.opt-tipo-INSS   { background-color: #fed7aa; color: #9a3412; font-weight: 700; }
 
 #view-ferias .fer-empty {
   background: #ffffff;
@@ -6918,20 +6938,22 @@ function renderFeriasTable() {
                 <td class="col-tipo">${tipo ? `<span class="fer-pill fer-pill-tipo ${_ferLabelTipo(tipo)}">${tipo}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
                 <td class="col-status">${status ? `<span class="fer-pill fer-pill-status ${_ferLabelStatus(status)}">${status}</span>` : '<span style="color:var(--text3)">—</span>'}</td>`;
       }
+      const tipoCls   = tipo   ? `fer-sel-tipo tipo-${_ferLabelTipo(tipo)}` : 'fer-sel-tipo';
+      const statusCls = status ? `fer-sel-status status-${_ferLabelStatus(status)}` : 'fer-sel-status';
       return `
         <td class="col-date${startCls}"><input type="date" value="${di}" onchange="updateFeriaPeriodo('${r.key}',${i},'dataInicial',this.value)"></td>
         <td class="col-date"><input type="date" value="${df}" onchange="updateFeriaPeriodo('${r.key}',${i},'dataFinal',this.value)"></td>
         <td class="col-qtd">${qtd || '—'}</td>
         <td class="col-tipo">
-          <select onchange="updateFeriaPeriodo('${r.key}',${i},'tipo',this.value)">
+          <select class="${tipoCls}" onchange="updateFeriaPeriodo('${r.key}',${i},'tipo',this.value)">
             <option value="">—</option>
-            ${FER_TIPOS.map(t => `<option value="${t}" ${t===tipo?'selected':''}>${t}</option>`).join('')}
+            ${FER_TIPOS.map(t => `<option value="${t}" class="opt-tipo-${_ferLabelTipo(t)}" ${t===tipo?'selected':''}>${t}</option>`).join('')}
           </select>
         </td>
         <td class="col-status">
-          <select onchange="updateFeriaPeriodo('${r.key}',${i},'status',this.value)">
+          <select class="${statusCls}" onchange="updateFeriaPeriodo('${r.key}',${i},'status',this.value)">
             <option value="">—</option>
-            ${FER_STATUS.map(s => `<option value="${s}" ${s===status?'selected':''}>${s}</option>`).join('')}
+            ${FER_STATUS.map(s => `<option value="${s}" class="opt-status-${_ferLabelStatus(s)}" ${s===status?'selected':''}>${s}</option>`).join('')}
           </select>
         </td>`;
     }).join('');
@@ -6967,8 +6989,8 @@ function updateFeriaPeriodo(key, i, field, value) {
   feriasData[key].periodos[i][field] = value || null;
   db.ref(`presenca/gestaoFerias/${key}/periodos/${i}/${field}`).set(value || null)
     .catch(e => notify('Falha ao salvar: ' + (e.message || e), 'error'));
-  // Re-render pra atualizar Qtd dias
-  if (field === 'dataInicial' || field === 'dataFinal') {
+  // Re-render: datas (atualiza Qtd) e tipo/status (atualiza cor do select)
+  if (field === 'dataInicial' || field === 'dataFinal' || field === 'tipo' || field === 'status') {
     renderFeriasTable();
   }
 }
