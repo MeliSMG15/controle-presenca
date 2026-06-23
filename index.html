@@ -1141,7 +1141,7 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
    Aplicado direto via #view-ferias, sem afetar outras views
    ════════════════════════════════════════════════════════ */
 #view-ferias {
-  background: linear-gradient(180deg, #eaf2fc 0%, #f4f8fd 380px);
+  background: linear-gradient(180deg, #b8d0ee 0%, #d4e3f4 380px, #e1ecf7 100%);
   margin: -20px -20px 0; padding: 26px 28px 40px;
   border-radius: 14px;
   min-height: 100vh;
@@ -1247,6 +1247,19 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
   border-color: #3483fa;
   box-shadow: 0 0 0 2px rgba(52, 131, 250, 0.18);
 }
+/* Força <option> com fundo branco e texto escuro (corrige bug de herança) */
+#view-ferias select option,
+#view-ferias .fer-table select option {
+  background-color: #ffffff !important;
+  color: #0f2547 !important;
+  font-weight: 500;
+}
+#view-ferias select option:checked,
+#view-ferias .fer-table select option:checked {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+  font-weight: 700;
+}
 
 #view-ferias .fer-empty {
   background: #ffffff;
@@ -1254,6 +1267,19 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
 }
 #view-ferias .fer-empty .ttl { color: #0f2547; }
 #view-ferias .fer-empty .sub { color: #748aab; }
+
+/* Info badge — aviso "só Meli edita" nas abas OP/REP */
+#view-ferias .fer-info-badge {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(135deg, #ffffff, #eaf2fc);
+  border: 1px solid #c7d8ec; border-left: 4px solid #1e6ae0;
+  border-radius: 10px;
+  padding: 10px 16px; margin-bottom: 14px;
+  font-size: 12.5px; color: #1a2d4f;
+  box-shadow: 0 1px 3px rgba(30, 106, 224, 0.05);
+}
+#view-ferias .fer-info-badge strong { color: #1e6ae0; font-weight: 700; }
+#view-ferias .fer-info-icon { font-size: 16px; line-height: 1; }
 
 /* Pills de tipo no tema claro — tons mais saturados pra ficar visíveis */
 #view-ferias .fer-pill-tipo.Ferias { background: #cffafe; color: #155e75; border-color: #67e8f9; }
@@ -6875,9 +6901,17 @@ function renderFeriasTable() {
       `).join('')}
     </tr>`;
 
+  // Info badge para OP/REP (só Meli edita)
+  const meliOnlyBadge = (feriasSubtab !== 'lideranca')
+    ? `<div class="fer-info-badge">
+         <span class="fer-info-icon">🛡️</span>
+         <span><strong>Apenas usuários Meli</strong> (@${ALLOWED_DOMAIN}) podem agendar/editar férias dos colaboradores nesta aba.</span>
+       </div>`
+    : '';
+
   // Body
   if (!rows.length) {
-    host.innerHTML = `
+    host.innerHTML = meliOnlyBadge + `
       <div class="fer-empty">
         <div class="ico">🔍</div>
         <div class="ttl">Nenhum colaborador encontrado</div>
@@ -6933,7 +6967,7 @@ function renderFeriasTable() {
     return `<tr>${nomeCell}${cicloCell}${cellsPeriodos}${acaoCell}</tr>`;
   }).join('');
 
-  host.innerHTML = `<div class="fer-wrap">
+  host.innerHTML = meliOnlyBadge + `<div class="fer-wrap">
     <table class="fer-table">
       <thead>${groupHead}${subHead}</thead>
       <tbody>${body}</tbody>
