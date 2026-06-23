@@ -914,30 +914,38 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
   color: var(--text2);
 }
 
-/* Caixa de regras */
+/* Caixa de regras — compacta, azul claro */
 .fer-rules-box {
-  display: flex; align-items: flex-start; gap: 14px;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.10), rgba(239, 68, 68, 0.08));
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-left: 4px solid #f59e0b;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.10), rgba(59, 130, 246, 0.06));
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  border-left: 4px solid #60a5fa;
   border-radius: 10px;
-  padding: 14px 18px;
+  padding: 12px 16px;
   margin-bottom: 22px;
 }
-.fer-rules-icon {
-  font-size: 22px; line-height: 1.2;
-  flex-shrink: 0;
+.fer-rules-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  color: #93c5fd; margin-bottom: 8px;
 }
-.fer-rules-text {
-  font-size: 13px; line-height: 1.55;
+.fer-rules-head strong { color: #93c5fd; font-weight: 800; }
+.fer-rules-icon { font-size: 14px; line-height: 1; }
+.fer-rules-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-wrap: wrap; gap: 6px 18px;
+  font-size: 13px; line-height: 1.4;
+}
+.fer-rules-list li {
+  display: inline-flex; align-items: baseline; gap: 5px;
   color: var(--text);
 }
-.fer-rules-text strong:first-child {
-  display: block; color: #fbbf24; margin-bottom: 4px;
-  font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px;
+.fer-rules-list li + li { position: relative; padding-left: 18px; }
+.fer-rules-list li + li::before {
+  content: '·'; position: absolute; left: 4px; top: -2px;
+  color: var(--text3); font-size: 18px; line-height: 1;
 }
-.fer-rules-text span { display: inline-block; margin-right: 4px; }
-.fer-rules-text span:nth-child(even) { color: var(--text3); margin: 0 6px; }
+.fer-rules-key { color: var(--text2); }
+.fer-rules-list strong { color: #fff; font-weight: 700; }
 
 /* Toolbar (busca + filtros) */
 .fer-toolbar {
@@ -1727,7 +1735,10 @@ table.esc-cal td { position:relative; }
         <div class="fer-page-eyebrow">SMG15 · Recursos Humanos</div>
         <h1 class="fer-page-title">🌴 Gestão de Férias</h1>
       </div>
-      <button class="btn btn-primary" id="btn-add-lideranca" onclick="addLiderancaPrompt()" style="display:none">+ Adicionar Liderança</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="btn-seed-ferias" onclick="seedFeriasFromImages()" style="display:none;background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff;border:0">🌱 Carregar dados iniciais</button>
+        <button class="btn btn-primary" id="btn-add-lideranca" onclick="addLiderancaPrompt()" style="display:none">+ Adicionar Liderança</button>
+      </div>
     </div>
 
     <!-- Sub-tabs estilo pills -->
@@ -1754,17 +1765,17 @@ table.esc-cal td { position:relative; }
       </button>
     </div>
 
-    <!-- Aviso (regras) -->
+    <!-- Aviso (regras) — layout compacto -->
     <div class="fer-rules-box">
-      <div class="fer-rules-icon">⚠</div>
-      <div class="fer-rules-text">
-        <strong>Regras importantes:</strong>
-        <span>Não tirar férias em <strong>Novembro e Dezembro 2026</strong></span>
-        <span>·</span>
-        <span>Não ter <strong>dois líderes</strong> no mesmo período</span>
-        <span>·</span>
-        <span>Meli permite vender até <strong>10 dias</strong> de férias</span>
+      <div class="fer-rules-head">
+        <span class="fer-rules-icon">⚠</span>
+        <strong>Regras importantes</strong>
       </div>
+      <ul class="fer-rules-list">
+        <li><span class="fer-rules-key">Não tirar férias em</span> <strong>Novembro e Dezembro 2026</strong></li>
+        <li><span class="fer-rules-key">Não ter</span> <strong>dois líderes</strong> <span class="fer-rules-key">no mesmo período</span></li>
+        <li><span class="fer-rules-key">Meli permite vender até</span> <strong>10 dias</strong> <span class="fer-rules-key">de férias</span></li>
+      </ul>
     </div>
 
     <!-- Filtros -->
@@ -6622,6 +6633,9 @@ function setFeriasSubtab(v) {
   // Botão "Adicionar Liderança" só na sub-aba Liderança
   const addBtn = document.getElementById('btn-add-lideranca');
   if (addBtn) addBtn.style.display = (v === 'lideranca' && canEdit()) ? '' : 'none';
+  // Botão "Carregar dados iniciais" só admin
+  const seedBtn = document.getElementById('btn-seed-ferias');
+  if (seedBtn) seedBtn.style.display = isAdmin() ? '' : 'none';
   // Filtro de ciclo só na sub-aba REP
   const cicloSel = document.getElementById('fer-ciclo');
   if (cicloSel) cicloSel.style.display = (v === 'rep') ? '' : 'none';
@@ -6841,9 +6855,155 @@ function removeLideranca(key, nome) {
     .then(() => {
       delete feriasData[key];
       notify('Removido');
+      _updateFerCounts();
       renderFeriasTable();
     })
     .catch(e => notify('Falha: ' + (e.message || e), 'error'));
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   SEED: carrega os dados das imagens enviadas pelo usuário
+   - Liderança: nomes manuais + períodos
+   - OP3 / OP2 / REP: faz match por nome (normalizado) no allData
+   Roda só pra admin, e só sobrescreve o nó presenca/gestaoFerias
+   ───────────────────────────────────────────────────────────────── */
+function _normNameStrict(s) {
+  return (s||'')
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toUpperCase().replace(/[^A-Z ]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function _findColabIdx(nome) {
+  const target = _normNameStrict(nome);
+  if (!target) return -1;
+  let bestIdx = -1, bestScore = 0;
+  allData.forEach((r, idx) => {
+    if (!r) return;
+    const nm = _normNameStrict(r['NOME'] || r['NOME COMPLETO'] || '');
+    if (!nm) return;
+    if (nm === target) { bestIdx = idx; bestScore = 999; return; }
+    // match parcial: todas as palavras de "target" presentes em nm
+    const tokens = target.split(' ').filter(x=>x.length>2);
+    const hit = tokens.filter(t => nm.includes(t)).length;
+    if (hit >= 2 && hit > bestScore) { bestScore = hit; bestIdx = idx; }
+  });
+  return bestIdx;
+}
+
+const _SEED_LIDERANCA = [
+  { nome: 'Celso Freitas',    periodos: [] },
+  { nome: 'Nathalia Tavares', periodos: [
+    { dataInicial:'2026-04-27', dataFinal:'2026-05-08', tipo:'Férias', status:'Concluído' },
+    { dataInicial:'2026-07-27', dataFinal:'2026-08-13', tipo:'Férias', status:'Pendente' }
+  ]},
+  { nome: 'Leandro Siqueira', periodos: [
+    { dataInicial:'2026-05-11', dataFinal:'2026-05-25', tipo:'Férias', status:'Concluído' },
+    { dataInicial:'2026-08-10', dataFinal:'2026-08-24', tipo:'Férias', status:'Pendente' }
+  ]},
+  { nome: 'Carlos Torres', periodos: [
+    { dataInicial:'2026-03-09', dataFinal:'2026-03-18', tipo:'Férias', status:'Concluído' },
+    { dataInicial:'2026-09-14', dataFinal:'2026-10-03', tipo:'Férias', status:'Agendado' }
+  ]},
+  { nome: 'Lucas Bastos', periodos: [
+    { dataInicial:'2025-04-10', dataFinal:'2025-04-23', tipo:'Licença Casamento', status:'Concluído' },
+    { dataInicial:'2026-07-06', dataFinal:'2026-07-20', tipo:'Férias',            status:'Agendado'  },
+    { dataInicial:'2026-08-24', dataFinal:'2026-09-07', tipo:'Férias',            status:'Pendente'  }
+  ]},
+  { nome: 'Guilherme Mota', periodos: [
+    { dataInicial:'2026-06-17', dataFinal:'2026-06-30', tipo:'Licença Casamento', status:'Agendado' }
+  ]},
+  { nome: 'Stéfani Nunes',  periodos: [] },
+  { nome: 'Victor Lobato',  periodos: [] },
+  { nome: 'Franck Ferreira', periodos: [
+    { dataInicial:'2026-05-26', dataFinal:'2026-06-09', tipo:'Férias', status:'Concluído' }
+  ]}
+];
+
+const _SEED_OP3 = [
+  { nome:'ACLISSON GOMES',            periodos:[
+    { dataInicial:'2026-05-04', dataFinal:'2026-05-13', tipo:'Férias', status:'Concluído' }
+  ]},
+  { nome:'THIAGO ZENHA',              periodos:[
+    { dataInicial:'2026-02-24', dataFinal:'2026-03-10', tipo:'Férias', status:'Aprovado' },
+    { dataInicial:'2026-07-21', dataFinal:'2026-08-04', tipo:'Férias', status:'Aprovado' }
+  ]},
+  { nome:'WILSON',                    periodos:[
+    { dataInicial:'2026-06-08', dataFinal:'2026-06-27', tipo:'Férias', status:'Aprovado' }
+  ]},
+  { nome:'MARIANA COELHO GONCALVES',  periodos:[
+    { dataInicial:'',           dataFinal:'',           tipo:'Férias', status:'Agendado'  }
+  ]}
+];
+
+const _SEED_OP2 = [
+  { nome:'EDILAENE OLIVEIRA',                   periodos:[
+    { dataInicial:'2025-03-16', dataFinal:'2025-03-30', tipo:'Férias', status:'Aprovado' },
+    { dataInicial:'2026-07-20', dataFinal:'2026-08-03', tipo:'Férias', status:'Aprovado' }
+  ]},
+  { nome:'VINICIUS AUGUSTO CARLOS MARTINS',     periodos:[
+    { dataInicial:'2026-08-03', dataFinal:'2026-08-17', tipo:'Férias', status:'Aprovado' }
+  ]},
+  { nome:'MATHEUS EDUARDO INACIO',              periodos:[
+    { dataInicial:'2026-04-06', dataFinal:'2026-05-05', tipo:'Férias', status:'Aprovado' }
+  ]},
+  { nome:'ESTEFANI GABRIELA LAINA TAVARES',     periodos:[
+    { dataInicial:'2026-01-26', dataFinal:'2026-02-09', tipo:'Férias', status:'Aprovado' }
+  ]}
+];
+
+const _SEED_REP = [
+  { nome:'MARA LUCIA BABETO',                     periodos:[{ dataInicial:'2026-01-05', dataFinal:'2026-02-03', tipo:'Férias', status:'Concluído' }] },
+  { nome:'NAYARA CAROLINE SENA',                  periodos:[{ dataInicial:'2026-02-09', dataFinal:'2026-03-10', tipo:'Férias', status:'Concluído' }] },
+  { nome:'CRISTINA MARCIA VALERIO SOUZA',         periodos:[{ dataInicial:'2026-03-03', dataFinal:'2026-04-01', tipo:'Férias', status:'Concluído' }] },
+  { nome:'EDUARDO RIBEIRO DIAS',                  periodos:[{ dataInicial:'2026-02-06', dataFinal:'2026-03-07', tipo:'Férias', status:'Concluído' }] },
+  { nome:'FELANDA ALISMA',                        periodos:[{ dataInicial:'2026-03-02', dataFinal:'2026-03-31', tipo:'Férias', status:'Concluído' }] },
+  { nome:'GIZELE GONCALVES MOREIRA THEODORO',     periodos:[{ dataInicial:'2026-03-02', dataFinal:'2026-03-31', tipo:'Férias', status:'Concluído' }] },
+  { nome:'EDIO FLORES',                           periodos:[{ dataInicial:'2026-01-19', dataFinal:'2026-02-17', tipo:'Férias', status:'Concluído' }] },
+  { nome:'DIANA CRISTINA ALVES RODRIGUES',        periodos:[{ dataInicial:'2026-02-09', dataFinal:'2026-03-10', tipo:'Férias', status:'Concluído' }] },
+  { nome:'STHER ISADORA LEAL VIEIRA',             periodos:[{ dataInicial:'2026-03-09', dataFinal:'2026-04-07', tipo:'Férias', status:'Concluído' }] },
+  { nome:'SAMARA GRACIELE',                       periodos:[{ dataInicial:'2026-03-02', dataFinal:'2026-03-16', tipo:'Férias', status:'Concluído' }] },
+  { nome:'RENATA DOS SANTOS ALVES',               periodos:[{ dataInicial:'2026-03-16', dataFinal:'2026-03-30', tipo:'Férias', status:'Concluído' }] },
+  { nome:'GEOVANA DOS SANTOS BARRETO',            periodos:[{ dataInicial:'2026-04-06', dataFinal:'2026-05-05', tipo:'Férias', status:'Concluído' }] },
+  { nome:'ALEXANDRE MAGALHAES DA SILVA',          periodos:[{ dataInicial:'2026-07-06', dataFinal:'2026-08-04', tipo:'Férias', status:'Aprovado'  }] },
+  { nome:'RAIAN LEMOS GONCALVES',                 periodos:[{ dataInicial:'2026-04-05', dataFinal:'2026-05-04', tipo:'Férias', status:'Concluído' }] },
+  { nome:'ANTONIO CARLOS DIAS PORTELA',           periodos:[{ dataInicial:'2026-04-27', dataFinal:'2026-05-27', tipo:'Férias', status:'Concluído' }] },
+  { nome:'SULAMITA SOUZA DINIZ',                  periodos:[{ dataInicial:'2026-09-08', dataFinal:'2026-10-07', tipo:'Férias', status:'Aprovado'  }] },
+  { nome:'RONALDO ALVES DE SOUZA',                periodos:[{ dataInicial:'2026-06-01', dataFinal:'2026-06-30', tipo:'Férias', status:'Aprovado'  }] },
+  { nome:'RAFAEL DE JESUS MAGALHAES',             periodos:[{ dataInicial:'2026-05-18', dataFinal:'2026-06-16', tipo:'Férias', status:'Aprovado'  }] },
+  { nome:'TATIANE CRISTINA SILVA RIOS',           periodos:[{ dataInicial:'2026-09-08', dataFinal:'2026-10-07', tipo:'Férias', status:'Aprovado'  }] },
+  { nome:'MARCELA BARCELLOS MARTINS',             periodos:[{ dataInicial:'2026-10-06', dataFinal:'2026-11-04', tipo:'Férias', status:'Aprovado'  }] },
+  { nome:'KETHLYN GABRIELLE MARTINS DA SILVA SA', periodos:[{ dataInicial:'2027-01-05', dataFinal:'2027-02-03', tipo:'Férias', status:'Aprovado'  }] }
+];
+
+function seedFeriasFromImages() {
+  if (!isAdmin()) { notify('Acesso restrito ao admin', 'error'); return; }
+  if (!Array.isArray(allData) || !allData.length) { notify('Aguarde — base ainda carregando', 'error'); return; }
+  if (!confirm('Carregar os dados iniciais das imagens? Isso vai sobrescrever entradas existentes para os mesmos colaboradores.')) return;
+
+  const updates = {};
+  let okL=0, okC=0, missC=[];
+
+  // Liderança (manual)
+  _SEED_LIDERANCA.forEach(item => {
+    const key = 'lider_' + _normNameStrict(item.nome).toLowerCase().replace(/ /g,'_');
+    updates[`presenca/gestaoFerias/${key}`] = { nome: item.nome, periodos: item.periodos };
+    okL++;
+  });
+
+  // OP3 / OP2 / REP por idx
+  const colabSeed = [..._SEED_OP3, ..._SEED_OP2, ..._SEED_REP];
+  colabSeed.forEach(item => {
+    const idx = _findColabIdx(item.nome);
+    if (idx < 0) { missC.push(item.nome); return; }
+    updates[`presenca/gestaoFerias/colab_${idx}`] = { periodos: item.periodos };
+    okC++;
+  });
+
+  db.ref().update(updates).then(() => {
+    let msg = `✓ ${okL} líderes + ${okC} colaboradores carregados.`;
+    if (missC.length) msg += ` ${missC.length} não encontrados: ` + missC.slice(0,3).join(', ') + (missC.length>3 ? '…' : '');
+    notify(msg);
+    if (missC.length) console.warn('[seedFerias] Não encontrados na base:', missC);
+  }).catch(e => notify('Falha: ' + (e.message || e), 'error'));
 }
 
 function init() {
