@@ -1109,10 +1109,11 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
 .fer-pill-tipo.LMat   { background: rgba(236,72,153,0.18); color: #f9a8d4; border: 1px solid rgba(236,72,153,0.4); }
 .fer-pill-tipo.LPat   { background: rgba(96,165,250,0.18); color: #93c5fd; border: 1px solid rgba(96,165,250,0.4); }
 .fer-pill-tipo.INSS   { background: rgba(251,146,60,0.18); color: #fdba74; border: 1px solid rgba(251,146,60,0.4); }
-.fer-pill-status.Pendente  { background: rgba(251,146,60,0.18); color: #fb923c; border: 1px solid rgba(251,146,60,0.4); }
-.fer-pill-status.Agendado  { background: rgba(245,158,11,0.18); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); }
-.fer-pill-status.Concluido { background: rgba(52,211,153,0.18); color: #34d399; border: 1px solid rgba(52,211,153,0.4); }
-.fer-pill-status.Aprovado  { background: rgba(96,165,250,0.18); color: #93c5fd; border: 1px solid rgba(96,165,250,0.4); }
+.fer-pill-status.Pendente  { background: #fde2cf; color: #9a3412; border: 1px solid #fbcfa5; }
+.fer-pill-status.Agendado  { background: #fef3c7; color: #92400e; border: 1px solid #fcd97a; }
+.fer-pill-status.Concluido { background: #d1fae5; color: #065f46; border: 1px solid #86efac; }
+.fer-pill-status.Aprovado  { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+.fer-pill-status.Reprovado { background: #991b1b; color: #ffffff; border: 1px solid #7f1d1d; }
 
 .fer-row-action {
   cursor: pointer; color: var(--red);
@@ -1134,6 +1135,132 @@ select.att-select option[value="INJUSTIFICADA"] { background: #2e0000; }
 .fer-empty .ico { font-size: 48px; margin-bottom: 12px; }
 .fer-empty .ttl { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
 .fer-empty .sub { font-size: 13px; color: var(--text3); }
+
+/* ════════════════════════════════════════════════════════
+   TEMA AZUL CLARO — escopado só para a aba Gestão de Férias
+   Aplicado direto via #view-ferias, sem afetar outras views
+   ════════════════════════════════════════════════════════ */
+#view-ferias {
+  background: linear-gradient(180deg, #eaf2fc 0%, #f4f8fd 380px);
+  margin: -20px -20px 0; padding: 26px 28px 40px;
+  border-radius: 14px;
+  min-height: 100vh;
+}
+#view-ferias .fer-page-eyebrow { color: #6b8cb5; }
+#view-ferias .fer-page-title   { color: #0f2547; }
+#view-ferias .fer-page-head    { border-bottom-color: #cfdcee; }
+
+#view-ferias .fer-subtabs {
+  background: #ffffff;
+  border: 1px solid #d3e1f3;
+  box-shadow: 0 4px 14px rgba(30, 106, 224, 0.07);
+}
+#view-ferias .fer-subtab        { color: #4a6892; }
+#view-ferias .fer-subtab:hover  { background: #eef4fc; color: #0f2547; }
+#view-ferias .fer-subtab.active {
+  background: linear-gradient(135deg, #1e6ae0, #3483fa);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(30, 106, 224, 0.30);
+}
+#view-ferias .fer-subtab:not(.active) .fer-subtab-count {
+  background: #eaf1fb; color: #4a6892;
+}
+
+#view-ferias .fer-rules-box {
+  background: linear-gradient(135deg, #ffffff, #eef4fc);
+  border: 1px solid #c7d8ec; border-left: 4px solid #3483fa;
+  box-shadow: 0 1px 3px rgba(30, 106, 224, 0.06);
+}
+#view-ferias .fer-rules-head    { color: #1e6ae0; }
+#view-ferias .fer-rules-head strong { color: #1e6ae0; }
+#view-ferias .fer-rules-key     { color: #4a6892; }
+#view-ferias .fer-rules-list    { color: #0f2547; }
+#view-ferias .fer-rules-list strong { color: #0f2547; }
+#view-ferias .fer-rules-list li + li::before { color: #a8c2e0; }
+
+#view-ferias .fer-search input,
+#view-ferias .fer-select {
+  background: #ffffff; color: #0f2547;
+  border: 1px solid #c7d8ec;
+}
+#view-ferias .fer-search-icon { color: #748aab; }
+#view-ferias .fer-search input::placeholder { color: #94a9c5; }
+#view-ferias .fer-search input:focus,
+#view-ferias .fer-select:focus {
+  border-color: #3483fa;
+  box-shadow: 0 0 0 3px rgba(52, 131, 250, 0.15);
+}
+
+#view-ferias .fer-wrap {
+  background: #ffffff;
+  border: 1px solid #d3e1f3;
+  box-shadow: 0 4px 14px rgba(30, 106, 224, 0.07);
+}
+
+/* Tabela em tons claros */
+#view-ferias .fer-table thead tr.group-row th {
+  background: linear-gradient(180deg, #e8f0fa, #dde8f6);
+  color: #0f2547;
+  border-bottom: 1px solid #c7d8ec;
+  border-right: 1px solid rgba(15, 37, 71, 0.06);
+}
+#view-ferias .fer-table thead tr.group-row th.col-nome,
+#view-ferias .fer-table thead tr.group-row th.col-ciclo {
+  background: linear-gradient(180deg, #dde8f6, #cfdcee);
+}
+#view-ferias .fer-table thead tr.group-row .periodo-num {
+  background: rgba(30, 106, 224, 0.12);
+  color: #1e6ae0;
+}
+#view-ferias .fer-table thead tr.header-row th {
+  background: #f4f8fd;
+  color: #4a6892;
+  border-bottom: 1px solid #c7d8ec;
+  border-right: 1px solid #e3edf8;
+}
+#view-ferias .fer-table tbody td {
+  border-bottom: 1px solid #e3edf8;
+  border-right: 1px solid rgba(15, 37, 71, 0.03);
+  color: #1a2d4f;
+}
+#view-ferias .fer-table tbody tr:hover td { background: rgba(52, 131, 250, 0.05); }
+#view-ferias .fer-table .col-nome {
+  background: #ffffff;
+  border-right: 2px solid #c7d8ec !important;
+  color: #0f2547;
+}
+#view-ferias .fer-table tbody tr:hover .col-nome { background: rgba(52, 131, 250, 0.07); }
+#view-ferias .fer-table .col-nome small { color: #748aab; }
+#view-ferias .fer-table .col-ciclo { color: #4a6892; }
+#view-ferias .fer-table .col-qtd { color: #0f2547; }
+#view-ferias .fer-table td.periodo-start { border-left: 3px solid #c7d8ec !important; }
+
+#view-ferias .fer-table input[type=date],
+#view-ferias .fer-table select {
+  background: #ffffff; color: #0f2547;
+  border: 1px solid #c7d8ec;
+}
+#view-ferias .fer-table input[type=date]:hover,
+#view-ferias .fer-table select:hover { border-color: #a8c2e0; }
+#view-ferias .fer-table input[type=date]:focus,
+#view-ferias .fer-table select:focus {
+  border-color: #3483fa;
+  box-shadow: 0 0 0 2px rgba(52, 131, 250, 0.18);
+}
+
+#view-ferias .fer-empty {
+  background: #ffffff;
+  border: 1px solid #d3e1f3;
+}
+#view-ferias .fer-empty .ttl { color: #0f2547; }
+#view-ferias .fer-empty .sub { color: #748aab; }
+
+/* Pills de tipo no tema claro — tons mais saturados pra ficar visíveis */
+#view-ferias .fer-pill-tipo.Ferias { background: #cffafe; color: #155e75; border-color: #67e8f9; }
+#view-ferias .fer-pill-tipo.LCasa  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+#view-ferias .fer-pill-tipo.LMat   { background: #fce7f3; color: #9d174d; border-color: #f9a8d4; }
+#view-ferias .fer-pill-tipo.LPat   { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+#view-ferias .fer-pill-tipo.INSS   { background: #fed7aa; color: #9a3412; border-color: #fdba74; }
 
 /* ════════════════════════════════════════════════════════
    TEMA AZUL CLARO — ativado por body.theme-light-blue
@@ -1735,10 +1862,7 @@ table.esc-cal td { position:relative; }
         <div class="fer-page-eyebrow">SMG15 · Recursos Humanos</div>
         <h1 class="fer-page-title">🌴 Gestão de Férias</h1>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn" id="btn-seed-ferias" onclick="seedFeriasFromImages()" style="display:none;background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff;border:0">🌱 Carregar dados iniciais</button>
-        <button class="btn btn-primary" id="btn-add-lideranca" onclick="addLiderancaPrompt()" style="display:none">+ Adicionar Liderança</button>
-      </div>
+      <button class="btn btn-primary" id="btn-add-lideranca" onclick="addLiderancaPrompt()" style="display:none">+ Adicionar Liderança</button>
     </div>
 
     <!-- Sub-tabs estilo pills -->
@@ -1798,6 +1922,7 @@ table.esc-cal td { position:relative; }
         <option value="Agendado">Agendado</option>
         <option value="Concluído">Concluído</option>
         <option value="Aprovado">Aprovado</option>
+        <option value="Reprovado">Reprovado</option>
       </select>
     </div>
 
@@ -6616,7 +6741,7 @@ function sendTestEmail() {
 // GESTÃO DE FÉRIAS
 // ═════════════════════════════════════════════
 const FER_TIPOS    = ['Férias','Licença Casamento','Licença Maternidade','Licença Paternidade','INSS'];
-const FER_STATUS   = ['Pendente','Agendado','Concluído','Aprovado'];
+const FER_STATUS   = ['Pendente','Agendado','Concluído','Aprovado','Reprovado'];
 const FER_PERIODOS = 3;
 let feriasData = {};        // Firebase mirror — chave: 'colab_<idx>' ou 'lider_<auto>'
 let feriasSubtab = 'lideranca';
@@ -6633,9 +6758,6 @@ function setFeriasSubtab(v) {
   // Botão "Adicionar Liderança" só na sub-aba Liderança
   const addBtn = document.getElementById('btn-add-lideranca');
   if (addBtn) addBtn.style.display = (v === 'lideranca' && canEdit()) ? '' : 'none';
-  // Botão "Carregar dados iniciais" só admin
-  const seedBtn = document.getElementById('btn-seed-ferias');
-  if (seedBtn) seedBtn.style.display = isAdmin() ? '' : 'none';
   // Filtro de ciclo só na sub-aba REP
   const cicloSel = document.getElementById('fer-ciclo');
   if (cicloSel) cicloSel.style.display = (v === 'rep') ? '' : 'none';
