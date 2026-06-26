@@ -2083,7 +2083,7 @@ table.esc-cal td { position:relative; }
 <div class="modal-overlay" id="modal-rimes">
   <div class="modal" style="width:min(90vw,1100px);max-height:90vh;overflow:auto">
     <div class="modal-title">📋 RIMES — Resumo diário</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Tabela pronta pra copiar e colar no RIMES. Usa o intervalo De/Até e filtros do Dashboard. Apenas colaboradores ATIVOS.</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Tabela pronta pra copiar e colar no RIMES. Usa o intervalo De/Até e filtros do Dashboard. Inclui colaboradores ativos e inativados que tinham presença registrada no período.</div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
       <button class="btn btn-primary" onclick="renderRimesTable()">🔄 Atualizar</button>
       <button class="btn btn-ghost" onclick="copyRimesTable()">📋 Copiar (TSV pra Excel)</button>
@@ -3514,8 +3514,8 @@ function _computeRimes() {
   const ciclo = document.getElementById('dash-ciclo').value;
   const cargo = document.getElementById('dash-cargo').value;
   const filtered = getFilteredData(team, status, lider, ciclo, cargo)
-    .filter(isActive)
     .filter(r => (r['CARGO']||'').trim().toUpperCase() !== 'OP3');   // exclui OP3 do RIMES
+  // Sem filtro de ativos: inclui também quem foi inativado mas tinha presença registrada no período
 
   const dateFrom = document.getElementById('dash-date-from').value;
   const dateTo   = document.getElementById('dash-date-to').value;
