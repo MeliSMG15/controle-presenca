@@ -1680,6 +1680,7 @@ table.esc-cal td { position:relative; }
         <label>💼 Status</label>
         <select id="pres-status" onchange="refreshPresenca()">
           <option value="ATIVO">Apenas Ativos</option>
+          <option value="INATIVO">Apenas Inativos</option>
           <option value="">Todos</option>
         </select>
       </div>
@@ -1717,6 +1718,8 @@ table.esc-cal td { position:relative; }
           <option value="INJUSTIFICADA">Injustificada</option>
           <option value="FOLGA DSR">Folga DSR</option>
           <option value="FÉRIAS">Férias</option>
+          <option value="INSS">INSS</option>
+          <option value="INATIVO">Inativo</option>
           <option value="__SEM_REGISTRO__">Sem registro</option>
         </select>
       </div>
@@ -4525,6 +4528,9 @@ function refreshPresenca() {
     if (attFilter === '__SEM_REGISTRO__') {
       // Quem tem PELO MENOS UM dia sem registro (vazio) no intervalo
       rows = rows.filter(r => dates.some(d => getEffectiveAtt(r, d) === ''));
+    } else if (attFilter === 'INATIVO') {
+      // INATIVO = status do colab (não é uma marcação de dia)
+      rows = rows.filter(r => !isActive(r));
     } else {
       rows = rows.filter(r => dates.some(d => getEffectiveAtt(r, d).toUpperCase() === attFilter.toUpperCase()));
     }
